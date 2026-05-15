@@ -1,0 +1,14 @@
+[desktop/background]
+picture-uri='file:///usr/share/backgrounds/acreetion.png'
+picture-uri-dark='file:///usr/share/backgrounds/acreetion.png'
+picture-options='zoom'
+
+[desktop/screensaver]
+picture-uri='file:///usr/share/backgrounds/acreetion2.png'
+picture-options='zoom'
+
+[desktop/interface]
+gtk-theme='Arc-Dark'
+icon-theme='Cosmic'
+cursor-theme='Adwaita'
+color-scheme='prefer-dark'
