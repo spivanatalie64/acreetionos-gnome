@@ -101,10 +101,10 @@ chown $name:$name /home/$name/.nanorc
 
 sudo pacman -S pacman --noconfirm --overwrite '*'
 
-# fix lightdm issue after install
+# fix gdm issue after install
 
 rm -rf /etc/systemd/system/display-manager.service
-systemctl enable lightdm.service
+systemctl enable gdm.service
 systemctl daemon-reload
 
 # updating backbrounds to work correctly setting permissions

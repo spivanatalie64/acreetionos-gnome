@@ -173,7 +173,7 @@ desktop_environments = [
         '/usr/bin/budgie-session', 'budgie-desktop'  # Budgie v8
         ),
     DesktopEnvironment('/usr/bin/gnome-session', 'gnome'),
-    DesktopEnvironment('/usr/bin/cinnamon-session-cinnamon', 'cinnamon'),
+    DesktopEnvironment('/usr/bin/gnome-session', 'gnome'),
     DesktopEnvironment('/usr/bin/mate-session', 'mate'),
     DesktopEnvironment('/usr/bin/enlightenment_start', 'enlightenment'),
     DesktopEnvironment('/usr/bin/lxsession', 'LXDE'),

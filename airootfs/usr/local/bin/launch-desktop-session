@@ -1,0 +1,24 @@
+#!/bin/bash
+set -euo pipefail
+
+session="${1:-}"
+display="${2:-:1}"
+
+case "$session" in
+  cinnamon)
+    exec xinit /usr/bin/cinnamon-session-cinnamon -- "$display"
+    ;;
+  cinnamon2d)
+    exec xinit /usr/bin/cinnamon-session-cinnamon2d -- "$display"
+    ;;
+  xfce)
+    exec xinit /usr/bin/startxfce4 -- "$display"
+    ;;
+  gnome)
+    exec xinit /usr/bin/dbus-run-session /usr/bin/gnome-session -- "$display"
+    ;;
+  *)
+    printf 'Unknown desktop session: %s\n' "$session" >&2
+    exit 64
+    ;;
+esac

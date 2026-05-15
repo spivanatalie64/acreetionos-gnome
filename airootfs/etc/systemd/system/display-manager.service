@@ -1,14 +1,18 @@
 [Unit]
-Description=Light Display Manager
-Documentation=man:lightdm(1)
-Conflicts=getty@tty1.service
-After=getty@tty1.service systemd-user-sessions.service plymouth-quit.service acpid.service
+Description=GNOME Display Manager
+Conflicts=getty@tty1.service plymouth-quit.service
+After=systemd-user-sessions.service getty@tty1.service plymouth-quit.service systemd-logind.service
 
 [Service]
-ExecStart=/usr/bin/lightdm
+ExecStart=/usr/bin/gdm
+KillMode=mixed
 Restart=always
+RestartSec=1s
 IgnoreSIGPIPE=no
 BusName=org.freedesktop.DisplayManager
+StandardError=inherit
+EnvironmentFile=-/etc/locale.conf
+EnvironmentFile=-/etc/gdm/custom.conf
 
 [Install]
 Alias=display-manager.service

@@ -89,6 +89,9 @@ sof-firmware
 ################################################################################
 xorg-server
 xorg-server-common
+xorg-xinit
+xfce4
+gnome
 mesa
 mesa-utils
 glu
@@ -108,23 +111,14 @@ xf86-input-libinput
 ################################################################################
 # DISPLAY MANAGER
 ################################################################################
-lightdm
-lightdm-gtk-greeter
+gdm
 
 ################################################################################
-# CINNAMON DESKTOP ENVIRONMENT
+# GNOME DESKTOP ENVIRONMENT
 ################################################################################
-cinnamon
-cinnamon-control-center
-cinnamon-desktop
-cinnamon-menus
-cinnamon-session
-cinnamon-settings-daemon
-cinnamon-screensaver
-cinnamon-translations
-cjs
-muffin
-nemo
+gnome
+gnome-tweaks
+gnome-shell
 gnome-terminal
 gnome-keyring
 gnome-themes-extra
