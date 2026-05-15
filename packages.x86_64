@@ -87,25 +87,12 @@ sof-firmware
 ################################################################################
 # DISPLAY SERVER & GRAPHICS
 ################################################################################
-xlibre
-xlibre-common
-xorg-xinit
-xfce4
-mesa
-mesa-utils
-glu
-vulkan-headers
-ocl-icd
-opencl-headers
-directx-headers
-
-################################################################################
-# GRAPHICS DRIVERS
-################################################################################
-xf86-video-amdgpu
-xf86-video-intel
-xf86-video-nouveau
-xf86-input-libinput
+xlibre-xserver
+xlibre-xserver-common
+#xf86-video-amdgpu
+#xf86-video-intel
+#xf86-video-nouveau
+xlibre-input-libinput
 
 ################################################################################
 # DISPLAY MANAGER
