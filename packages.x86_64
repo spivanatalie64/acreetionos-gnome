@@ -87,11 +87,10 @@ sof-firmware
 ################################################################################
 # DISPLAY SERVER & GRAPHICS
 ################################################################################
-xorg-server
-xorg-server-common
+xlibre
+xlibre-common
 xorg-xinit
 xfce4
-gnome
 mesa
 mesa-utils
 glu

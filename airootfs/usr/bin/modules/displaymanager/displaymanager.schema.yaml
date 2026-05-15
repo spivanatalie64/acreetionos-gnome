@@ -10,7 +10,7 @@ properties:
         type: array
         items:
             type: string
-            enum: [slim, sddm, lightdm, gdm, mdm, lxdm, greetd]
+            enum: [slim, sddm, gdm, mdm, lxdm, greetd]
         minItems: 1  # Must be non-empty, if present at all
     defaultDesktopEnvironment:
         type: object
@@ -27,7 +27,7 @@ properties:
             greeter_group: { type: string }
             greeter_css_location: { type: string }
         additionalProperties: false
-    lightdm:
+    gdm:
         type: object
         properties:
             preferred_greeters: { type: array, items: { type: string } }
