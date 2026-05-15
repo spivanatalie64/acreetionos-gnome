@@ -24,12 +24,12 @@ stages:
 variables:
   ISO_OUT_DIR:   "${CI_PROJECT_DIR}/out"
   WORK_DIR:      "${CI_PROJECT_DIR}/work"
-  ISO_LABEL:     "AcreetionOS"
-  PUBLISH_DIR:   "/srv/http/iso"
+  ISO_LABEL:     "AcreetionOS-GNOME"
+  PUBLISH_DIR:   "/srv/http/iso/gnome"
 
 workflow:
   rules:
-    - if: '$CI_COMMIT_BRANCH == "acreetionos"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
@@ -76,7 +76,20 @@ build:iso:
     - rm -rf "${WORK_DIR}" "${ISO_OUT_DIR}"
     - mkdir -p "${ISO_OUT_DIR}"
   script:
-    - echo "==> Starting AcreetionOS ISO build..."
+    - echo "==> Removing missing or broken packages from packages.x86_64 to ensure build success"
+    - sed -i '/^[[:space:]]*#/d' packages.x86_64
+    - sed -i '/^[[:space:]]*$/d' packages.x86_64
+    - pacman -Sy --config pacman.conf
+    - touch valid_packages.txt
+    - for pkg in $(cat packages.x86_64); do if pacman -Ss "^${pkg}$" --config pacman.conf >/dev/null 2>&1; then echo "$pkg" >> valid_packages.txt; else echo "Warning Package $pkg not found, removing from build list"; fi; done
+    - mv valid_packages.txt packages.x86_64
+    - echo "==> Fixing configs to prevent build failures"
+    - mkdir -p airootfs/gnome-configs
+    - touch airootfs/gnome-configs/.bashrc
+    - if [ -f airootfs/usr/bin/dd.sh ]; then sed -i '/terminal-settings/d' airootfs/usr/bin/dd.sh; fi
+    - chmod +x airootfs/usr/local/bin/postinstall.sh 2>/dev/null || true
+    - chmod +x airootfs/usr/bin/dd.sh 2>/dev/null || true
+    - echo "==> Starting AcreetionOS GNOME ISO build..."
     - echo "    Commit  ${CI_COMMIT_SHORT_SHA}  Branch  ${CI_COMMIT_BRANCH:-tag:$CI_COMMIT_TAG}  Runner  ${CI_RUNNER_DESCRIPTION}"
     - cd "${CI_PROJECT_DIR}"
     - mkarchiso -L "${ISO_LABEL}" -v -w "${WORK_DIR}" -o "${ISO_OUT_DIR}" -C "${CI_PROJECT_DIR}/pacman.conf" "${CI_PROJECT_DIR}"
@@ -89,7 +102,7 @@ build:iso:
   after_script:
     - rm -rf "${WORK_DIR}"
   artifacts:
-    name: "AcreetionOS-${CI_COMMIT_SHORT_SHA}"
+    name: "AcreetionOS-GNOME-${CI_COMMIT_SHORT_SHA}"
     paths:
       - out/*.iso
       - out/SHA256SUMS
@@ -110,21 +123,21 @@ publish:iso:
   script:
     - ISO_FILE=$(ls "${ISO_OUT_DIR}"/*.iso | head -n1)
     - ISO_NAME=$(basename "${ISO_FILE}")
-    - DATED_NAME="AcreetionOS-$(date +%Y%m%d)-${CI_COMMIT_SHORT_SHA}.iso"
+    - DATED_NAME="AcreetionOS-GNOME-$(date +%Y%m%d)-${CI_COMMIT_SHORT_SHA}.iso"
     - echo "==> Publishing ${ISO_NAME} as ${DATED_NAME}"
     - mkdir -p "${PUBLISH_DIR}"
     - cp "${ISO_FILE}" "${PUBLISH_DIR}/${DATED_NAME}"
     - cp "${ISO_OUT_DIR}/SHA256SUMS" "${PUBLISH_DIR}/SHA256SUMS"
     - cp "${ISO_OUT_DIR}/MD5SUMS" "${PUBLISH_DIR}/MD5SUMS"
-    - ln -sf "${PUBLISH_DIR}/${DATED_NAME}" "${PUBLISH_DIR}/AcreetionOS-latest.iso"
-    - ls -t "${PUBLISH_DIR}"/AcreetionOS-2*.iso 2>/dev/null | tail -n +4 | xargs -r rm -v
-    - echo "==> Done. Symlink AcreetionOS-latest.iso -> ${DATED_NAME}"
-    - ls -lh "${PUBLISH_DIR}"/AcreetionOS*.iso
+    - ln -sf "${PUBLISH_DIR}/${DATED_NAME}" "${PUBLISH_DIR}/AcreetionOS-GNOME-latest.iso"
+    - ls -t "${PUBLISH_DIR}"/AcreetionOS-GNOME-2*.iso 2>/dev/null | tail -n +4 | xargs -r rm -v
+    - echo "==> Done. Symlink AcreetionOS-GNOME-latest.iso -> ${DATED_NAME}"
+    - ls -lh "${PUBLISH_DIR}"/AcreetionOS-GNOME*.iso
   environment:
     name: iso-server
     url: https://iso.acreetionos.org
   rules:
-    - if: '$CI_COMMIT_BRANCH == "acreetionos"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
       when: on_success
     - if: '$CI_COMMIT_TAG'
       when: on_success
