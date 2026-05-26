@@ -107,8 +107,8 @@ jobs:
 
       - name: Upload ZIP to R2
         env:
-          CF_ACCOUNT: ${{ secrets.CF_ACCOUNT }}
-          CF_TOKEN: ${{ secrets.CF_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           BUCKET: acreetionos-gnome
         run: |
           for F in out/*.iso out/*.zip out/SHA256SUMS; do
