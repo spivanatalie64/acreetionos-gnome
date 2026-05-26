@@ -100,3 +100,13 @@ jobs:
             out/SHA256SUMS
             out/MD5SUMS
           retention-days: 14
+      - name: Upload to R2
+        env:
+          CF_ACCOUNT: ${{ secrets.CF_ACCOUNT }}
+          CF_TOKEN: ${{ secrets.CF_TOKEN }}
+          BUCKET: acreetionos-gnome
+        run: |
+          I=$(ls out/*.iso 2>/dev/null | head -1); [ -z "$I" ] && exit 0; N=$(basename "$I")
+          curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets" -H "Authorization: Bearer $CF_TOKEN" -d '{"name":"'$BUCKET'"}' || true
+          U=$(curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/${N}/upload" -H "Authorization: Bearer $CF_TOKEN" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin).get('result',{}).get('uploadURL',''))")
+          [ -n "$U" ] && curl -s -X PUT "$U" --data-binary @"$I" && echo "Uploaded $N" || echo "Upload failed"
