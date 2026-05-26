@@ -114,8 +114,8 @@ jobs:
           for F in out/*.iso out/*.zip out/SHA256SUMS; do
             [ ! -f "$F" ] && continue
             N=$(basename "$F")
-            curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets" -H "Authorization: Bearer $CF_TOKEN" -d '{"name":"'$BUCKET'"}' || true
-            U=$(curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/${N}/upload" -H "Authorization: Bearer $CF_TOKEN" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin).get('result',{}).get('uploadURL',''))")
+            curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets" -H "X-Auth-Email: ${{ secrets.CLOUDFLARE_EMAIL }}" -H "X-Auth-Key: ${{ secrets.CLOUDFLARE_API_TOKEN }}" -d '{"name":"'$BUCKET'"}' || true
+            U=$(curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/${N}/upload" -H "X-Auth-Email: ${{ secrets.CLOUDFLARE_EMAIL }}" -H "X-Auth-Key: ${{ secrets.CLOUDFLARE_API_TOKEN }}" -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin).get('result',{}).get('uploadURL',''))")
             [ -n "$U" ] && curl -s -X PUT "$U" --data-binary @"$F" && echo "Uploaded $N" || echo "Upload of $N failed"
           done
 
