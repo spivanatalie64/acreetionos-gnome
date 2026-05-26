@@ -1,151 +1,61 @@
-name: AcreetionOS GNOME Build Pipeline
-
+name: Build AcreetionOS32 ISO
 on:
   schedule:
-    # Run once a week on Sunday at midnight UTC
-    - cron: '0 0 * * 0'
+    - cron: '0 6 */7 * *'   # every 7 days
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
-
-env:
-  ISO_LABEL: "AcreetionOS-GNOME"
-
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
-      options: --privileged
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Prepare Arch Build Environment
-        run: |
-          echo "==> Initialising pacman keyring..."
-          pacman-key --init
-          pacman-key --populate archlinux
-          
-          echo "==> Refreshing databases and upgrading keyring..."
-          pacman -Sy --noconfirm archlinux-keyring
-          
-          echo "==> Installing build dependencies..."
-          pacman -Su --noconfirm
-          pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell awk grep
-
-      - name: Fix packages list to prevent build failures
-        run: |
-          echo "==> Removing missing or broken packages from packages.x86_64 to ensure build success"
-          # Remove comments and empty lines
-          sed -i '/^[[:space:]]*#/d' packages.x86_64
-          sed -i '/^[[:space:]]*$/d' packages.x86_64
-          
-          # Use local pacman cache to check valid packages, create a new list
-          # We update pacman db using the custom pacman.conf just in case
-          pacman -Sy --config pacman.conf
-          
-          touch valid_packages.txt
-          for pkg in $(cat packages.x86_64); do
-            if pacman -Ss "^${pkg}$" --config pacman.conf >/dev/null 2>&1; then
-              echo "$pkg" >> valid_packages.txt
-            else
-              echo "Warning: Package $pkg not found, removing from build list"
-            fi
-          done
-          
-          mv valid_packages.txt packages.x86_64
-          echo "==> Final package list:"
-          cat packages.x86_64
-
-      - name: Fix configs to prevent build failures
-        run: |
-          # Create gnome-configs if it doesn't exist
-          mkdir -p airootfs/gnome-configs
-          touch airootfs/gnome-configs/.bashrc
-          
-          # Clean broken references in dd.sh
-          if [ -f airootfs/usr/bin/dd.sh ]; then
-            sed -i '/terminal-settings/d' airootfs/usr/bin/dd.sh
-          fi
-          
-          # Fix any missing permissions
-          chmod +x airootfs/usr/local/bin/postinstall.sh 2>/dev/null || true
-          chmod +x airootfs/usr/bin/dd.sh 2>/dev/null || true
-
+      - uses: actions/checkout@v4
       - name: Build ISO
+        run: bash build.sh
+      - name: Checksums & ZIP
         run: |
-          echo "==> Starting AcreetionOS GNOME ISO build..."
-          mkdir -p work out
-          
-          # Build the ISO using archiso
-          mkarchiso -L "${ISO_LABEL}" -v -w work -o out -C pacman.conf .
-          
-          echo "==> Build complete."
-          ls -lh out/*.iso
-          
-          cd out
           sha256sum *.iso > SHA256SUMS
           md5sum *.iso > MD5SUMS
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: acreetionos-gnome-${{ github.sha }}
-          path: |
-            out/*.iso
-            out/*.zip
-            out/SHA256SUMS
-            out/MD5SUMS
-          retention-days: 14
-      - name: ZIP ISO
-        run: |
-          cd out && zip -9 "$(basename *.iso .iso).iso.zip" *.iso && ls -lh *.zip
-
-      - name: Upload ZIP to R2
+          zip -9 "$(basename *.iso .iso).iso.zip" *.iso && ls -lh *.zip
+      - name: Upload to R2
         env:
           CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
           BUCKET: acreetionos-gnome
         run: |
-          for F in out/*.iso out/*.zip out/SHA256SUMS; do
+          AUTH="-H X-Auth-Email:$CF_EMAIL -H X-Auth-Key:$CF_TOKEN"
+          # Ensure bucket exists
+          curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets" $AUTH -d "{\"name\":\"$BUCKET\"}" > /dev/null || true
+          for F in *.iso *.zip SHA256SUMS; do
             [ ! -f "$F" ] && continue
             N=$(basename "$F")
-            curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets" -H "X-Auth-Email: ${{ secrets.CLOUDFLARE_EMAIL }}" -H "X-Auth-Key: ${{ secrets.CLOUDFLARE_API_TOKEN }}" -d '{"name":"'$BUCKET'"}' || true
-            curl -s -X PUT "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/$N" -H "X-Auth-Email: ${{ secrets.CLOUDFLARE_EMAIL }}" -H "X-Auth-Key: ${{ secrets.CLOUDFLARE_API_TOKEN }}" --data-binary @"$F" && echo "Uploaded $N" || echo "Upload of $N failed"
+            # Get pre-signed upload URL
+            U=$(curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/${N}/upload" $AUTH -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin).get('result',{}).get('uploadURL',''))")
+            if [ -n "$U" ]; then
+              curl -s -X PUT "$U" --data-binary @"$F" && echo "Uploaded $N" || echo "Upload of $N failed"
+            else
+              echo "No upload URL for $N, trying direct PUT..."
+              curl -s -X PUT "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/$N" $AUTH --data-binary @"$F" && echo "Uploaded $N" || echo "Upload of $N failed"
+            fi
           done
-
       - name: Upload to Internet Archive
         env:
           IA_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
           IA_SECRET: ${{ secrets.IA_SECRET_KEY }}
         run: |
-          I=$(ls out/*.iso 2>/dev/null | head -1)
-          [ -z "$I" ] && exit 0
-          [ -z "$IA_ACCESS" ] && echo "No IA creds, skipping" && exit 0
-          N=$(basename "$I")
-          ITEM="AcreetionOS-GNOME-$(date +%Y%m%d)"
-          curl -s --location \
-            --header "authorization: LOW $IA_ACCESS:$IA_SECRET" \
+          I=$(ls *.iso 2>/dev/null | head -1); [ -z "$I" ] && exit 0; [ -z "$IA_ACCESS" ] && echo "No IA creds, skipping" && exit 0
+          N=$(basename "$I"); ITEM="AcreetionOS32-$(date +%Y%m%d)"
+          curl -s --location --header "authorization: LOW $IA_ACCESS:$IA_SECRET" \
             --header "x-archive-meta01-collection: opensource" \
-            --header "x-archive-meta-title: AcreetionOS GNOME Edition $N" \
-            --header "x-archive-meta-description: Weekly build of AcreetionOS GNOME Edition" \
+            --header "x-archive-meta-title: AcreetionOS32 $N" \
+            --header "x-archive-meta-description: Weekly 32-bit build" \
             --header "x-archive-meta-mediatype: software" \
-            "https://s3.us.archive.org/$ITEM/$N" \
-            --upload-file "$I" && echo "Uploaded to IA: $ITEM/$N" || echo "IA upload failed"
-
+            "https://s3.us.archive.org/$ITEM/$N" --upload-file "$I" && echo "Uploaded to IA" || echo "IA upload failed"
       - name: Upload to SourceForge
         env:
           SF_USERNAME: ${{ secrets.SF_USERNAME }}
           SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
         run: |
-          I=$(ls out/*.iso 2>/dev/null | head -1)
-          [ -z "$I" ] && exit 0
-          [ -z "$SF_USERNAME" ] && echo "No SF creds, skipping" && exit 0
+          I=$(ls *.iso 2>/dev/null | head -1); [ -z "$I" ] && exit 0; [ -z "$SF_USERNAME" ] && echo "No SF creds, skipping" && exit 0
           N=$(basename "$I")
-          curl -s -T "$I" \
-            "https://sourceforge.net/projects/acreetionos-iso-image/files/gnome/$N" \
-            --user "$SF_USERNAME:$SF_PASSWORD" && echo "Uploaded to SF: $N" || echo "SF upload failed"
+          curl -s -T "$I" "https://sourceforge.net/projects/acreetionos-iso-image/files/32bit/$N" \
+            --user "$SF_USERNAME:$SF_PASSWORD" && echo "Uploaded to SF" || echo "SF upload failed"
