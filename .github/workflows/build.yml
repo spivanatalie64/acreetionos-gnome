@@ -36,3 +36,21 @@ jobs:
           name: AcreetionOS-GNOME
           path: ../ISO/*.iso
           retention-days: 7
+      - name: Publish Release
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ISO="$(ls ../ISO/*.iso | head -1)"
+          if [ -z "$ISO" ]; then
+            echo "no ISO to publish"
+            exit 0
+          fi
+          TAG="build-${{ github.run_number }}"
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "$TAG" "$ISO" --repo "${{ github.repository }}"               --title "build #${{ github.run_number }}"               --notes "Automated CI build. Commit ${{ github.sha }}."
+          else
+            gh release upload "$TAG" "$ISO" --repo "${{ github.repository }}" --clobber
+          fi
+        env:
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
