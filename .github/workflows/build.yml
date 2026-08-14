@@ -19,7 +19,7 @@ jobs:
         run: |
           pacman -Sy --noconfirm archlinux-keyring
           pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build ISO
         run: |
           chmod +x build.sh
