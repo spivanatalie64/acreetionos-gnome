@@ -21,12 +21,14 @@ jobs:
           pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell git
       - uses: actions/checkout@v4
       - name: Build ISO
+        env:
+          OUTPUT_DIR: "${{ github.workspace }}/ISO"
         run: |
           chmod +x build.sh
           ./build.sh 2>&1
       - name: Checksums
         run: |
-          for f in ../ISO/*.iso; do
+          for f in "${{ github.workspace }}/ISO"/*.iso; do
             [ -f "$f" ] || continue
             sha256sum "$f" >> SHA256SUMS
           done
@@ -34,14 +36,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AcreetionOS-GNOME
-          path: ../ISO/*.iso
+          path: "${{ github.workspace }}/ISO"
           retention-days: 7
       - name: Publish Release
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
-          ISO="$(ls ../ISO/*.iso | head -1)"
+          ISO="$(ls "${{ github.workspace }}/ISO"/*.iso | head -1)"
           if [ -z "$ISO" ]; then
             echo "no ISO to publish"
             exit 0
