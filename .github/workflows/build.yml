@@ -31,7 +31,7 @@ jobs:
             sha256sum "$f" >> SHA256SUMS
           done
       - name: Upload ISO
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: AcreetionOS-GNOME
           path: ../ISO/*.iso
