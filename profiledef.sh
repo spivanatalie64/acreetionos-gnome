@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
+# profiledef.sh — AcreetionOS GNOME Edition
+# Self-contained archiso profile. Builds standalone from standard Arch mirrors.
 
-iso_name="AcreetionOS"
-iso_label="acreetionOS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
-iso_publisher="Acreetion OS"
-iso_application="Acreetion OS Install Media"
+iso_name="AcreetionOS-GNOME"
+iso_label="acreetionOS_gnome_202608"
+iso_publisher="Acreetion OS Community"
+iso_application="Acreetion OS GNOME Desktop Community Edition"
 iso_version="1.0"
 install_dir="arch"
 buildmodes=('iso')
-bootmodes=('bios.syslinux.mbr' 'bios.syslinux.eltorito' 'uefi-ia32.grub.esp' 'uefi-x64.grub.esp' 'uefi-ia32.grub.eltorito' 'uefi-x64.grub.eltorito')
+bootmodes=('bios.syslinux' 'uefi.grub' )
 arch="x86_64"
 pacman_conf="pacman.conf"
 airootfs_image_type="squashfs"
@@ -18,22 +20,10 @@ file_permissions=(
   ["/etc/shadow"]="0:0:400"
   ["/etc/gshadow"]="0:0:400"
   ["/root"]="0:0:750"
+  ["/root/customize_airootfs.sh"]="0:0:755"
   ["/root/.automated_script.sh"]="0:0:755"
   ["/root/.gnupg"]="0:0:700"
   ["/usr/local/bin/choose-mirror"]="0:0:755"
   ["/usr/local/bin/Installation_guide"]="0:0:755"
   ["/usr/local/bin/livecd-sound"]="0:0:755"
-  ["/usr/bin/calamares"]="0:0:755"
-#  ["/usr/lib/calamares/modules/*"]="0:0:755"
-  ["/root/cinstall"]="0:0:755"
-  ["/root/cinstall2"]="0:0:755"
-  ["/root/zone"]="0:0:755"
-  ["/usr/bin/fixkeys.sh"]="0:0:755"
-  ["/usr/bin/dd.sh"]="0:0:755"
-  ["/usr/local/bin/postinstall.sh"]="0:0:755"
-  ["/usr/bin/calamares.sh"]="0:0:755"
-  ["/usr/local/bin/preinstall"]="0:0:755"
-  ["/usr/local/bin/stormos-final"]="0:0:755"
-  ["/usr/bin/wifi-connection"]="0:0:755"
-  ["/usr/local/bin/setup-displays.sh"]="0:0:755"
 )

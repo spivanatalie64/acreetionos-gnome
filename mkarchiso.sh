@@ -1,1 +1,3 @@
-mkarchiso -L AcreetionOS_XL -v -o ../ISO . -C ./pacman.conf export PACMAN_OPTS="--overwrite '*'" --j$nproc
+#!/usr/bin/env bash
+set -euo pipefail
+exec mkarchiso -L "acreetionOS_gnome_202608" -v -o ../ISO . -C ./pacman.conf

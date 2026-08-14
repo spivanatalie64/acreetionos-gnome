@@ -1,15 +1,22 @@
-# Build directories
+# Build artifacts
 work/
 out/
-../ISO/*.iso
+*.iso
+*.iso.*
+ISO/
 
-# Compiled binaries
-mkarchiso_wrapper
-*.o
+# System files
+*~
+*.swp
+*.swo
 
-# Backup files
-*.bak
-*.save
+# OS files
+.DS_Store
+Thumbs.db
 
-# Pacman cache
-/var/cache/pacman/pkg/*
+# Python cache
+__pycache__/
+*.pyc
+
+# Build logs
+*.log

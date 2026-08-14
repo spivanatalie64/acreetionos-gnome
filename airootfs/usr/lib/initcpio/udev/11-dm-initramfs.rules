@@ -1,2 +1,0 @@
-# Placeholder file for archiso hook compatibility
-# dm-initramfs rules not needed since lvm2 is not included in this ISO

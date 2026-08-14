@@ -1,61 +1,38 @@
-name: Build AcreetionOS32 ISO
+name: Build AcreetionOS-GNOME ISO
+
 on:
+  push:
+    branches: [main]
   schedule:
-    - cron: '0 6 */7 * *'   # every 7 days
+    - cron: '0 6 * * 1'
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      options: --privileged
+    timeout-minutes: 180
     steps:
+      - name: Install deps
+        run: |
+          pacman -Sy --noconfirm archlinux-keyring
+          pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell git
       - uses: actions/checkout@v4
       - name: Build ISO
-        run: bash build.sh
-      - name: Checksums & ZIP
         run: |
-          sha256sum *.iso > SHA256SUMS
-          md5sum *.iso > MD5SUMS
-          zip -9 "$(basename *.iso .iso).iso.zip" *.iso && ls -lh *.zip
-      - name: Upload to R2
-        env:
-          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
-          BUCKET: acreetionos-gnome
+          chmod +x build.sh
+          ./build.sh 2>&1
+      - name: Checksums
         run: |
-          AUTH="-H X-Auth-Email:$CF_EMAIL -H X-Auth-Key:$CF_TOKEN"
-          # Ensure bucket exists
-          curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets" $AUTH -d "{\"name\":\"$BUCKET\"}" > /dev/null || true
-          for F in *.iso *.zip SHA256SUMS; do
-            [ ! -f "$F" ] && continue
-            N=$(basename "$F")
-            # Get pre-signed upload URL
-            U=$(curl -s -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/${N}/upload" $AUTH -d '{}' | python3 -c "import sys,json;print(json.load(sys.stdin).get('result',{}).get('uploadURL',''))")
-            if [ -n "$U" ]; then
-              curl -s -X PUT "$U" --data-binary @"$F" && echo "Uploaded $N" || echo "Upload of $N failed"
-            else
-              echo "No upload URL for $N, trying direct PUT..."
-              curl -s -X PUT "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/$N" $AUTH --data-binary @"$F" && echo "Uploaded $N" || echo "Upload of $N failed"
-            fi
+          for f in ../ISO/*.iso; do
+            [ -f "$f" ] || continue
+            sha256sum "$f" >> SHA256SUMS
           done
-      - name: Upload to Internet Archive
-        env:
-          IA_ACCESS: ${{ secrets.IA_ACCESS_KEY }}
-          IA_SECRET: ${{ secrets.IA_SECRET_KEY }}
-        run: |
-          I=$(ls *.iso 2>/dev/null | head -1); [ -z "$I" ] && exit 0; [ -z "$IA_ACCESS" ] && echo "No IA creds, skipping" && exit 0
-          N=$(basename "$I"); ITEM="AcreetionOS32-$(date +%Y%m%d)"
-          curl -s --location --header "authorization: LOW $IA_ACCESS:$IA_SECRET" \
-            --header "x-archive-meta01-collection: opensource" \
-            --header "x-archive-meta-title: AcreetionOS32 $N" \
-            --header "x-archive-meta-description: Weekly 32-bit build" \
-            --header "x-archive-meta-mediatype: software" \
-            "https://s3.us.archive.org/$ITEM/$N" --upload-file "$I" && echo "Uploaded to IA" || echo "IA upload failed"
-      - name: Upload to SourceForge
-        env:
-          SF_USERNAME: ${{ secrets.SF_USERNAME }}
-          SF_PASSWORD: ${{ secrets.SF_PASSWORD }}
-        run: |
-          I=$(ls *.iso 2>/dev/null | head -1); [ -z "$I" ] && exit 0; [ -z "$SF_USERNAME" ] && echo "No SF creds, skipping" && exit 0
-          N=$(basename "$I")
-          curl -s -T "$I" "https://sourceforge.net/projects/acreetionos-iso-image/files/32bit/$N" \
-            --user "$SF_USERNAME:$SF_PASSWORD" && echo "Uploaded to SF" || echo "SF upload failed"
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: AcreetionOS-GNOME
+          path: ../ISO/*.iso
+          retention-days: 7
