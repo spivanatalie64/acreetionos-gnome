@@ -53,9 +53,13 @@ jobs:
             # GitHub release assets cap at 2GiB — xz-compress if needed
             if [ "$(stat -c%s "$ISO")" -ge 2147483648 ]; then
               echo "ISO over 2GiB — compressing for release"
-              xz -k -f -6 "$ISO" && ISO="$ISO.xz"
+              xz -k -f -9 "$ISO" && ISO="$ISO.xz"
             fi
-            gh release create "$TAG" "$ISO" --repo "${{ github.repository }}"               --title "build #${{ github.run_number }}"               --notes "Automated CI build. Commit ${{ github.sha }}."
+            if [ "$(stat -c%s "$ISO")" -lt 2147483648 ]; then
+              gh release create "$TAG" "$ISO" --repo "${{ github.repository }}"                 --title "build #${{ github.run_number }}"                 --notes "Automated CI build. Commit ${{ github.sha }}."
+            else
+              echo "ISO still over 2GiB after xz -9 — skipping release asset (artifact remains in CI)"
+            fi
           else
             gh release upload "$TAG" "$ISO" --repo "${{ github.repository }}" --clobber
           fi
