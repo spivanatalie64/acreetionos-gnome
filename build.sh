@@ -5,7 +5,7 @@
 # a valid ISO (missing-firmware warnings etc). Every step is guarded.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/../ISO}"
+OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/ISO}"
 
 cd "$SCRIPT_DIR"
 
@@ -20,6 +20,7 @@ echo "  :: Cleaning workspace..."
 ./refresh.sh -j 2>/dev/null || true
 
 echo "  :: Running mkarchiso..."
+mkdir -p "${OUTPUT_DIR}"
 ./mkarchiso.sh || true
 
 FOUND_ISO=$(find "${OUTPUT_DIR}" -name "AcreetionOS-GNOME*.iso" -type f 2>/dev/null | head -1 || true)

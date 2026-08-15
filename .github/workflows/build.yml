@@ -18,7 +18,7 @@ jobs:
       - name: Install deps
         run: |
           pacman -Sy --noconfirm archlinux-keyring
-          pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell git
+          pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell git github-cli
       - uses: actions/checkout@v4
       - name: Build ISO
         # NOTE: no OUTPUT_DIR override — build.sh defaults to ../ISO relative
@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ISO="$(ls "${{ github.workspace }}/ISO"/*.iso | head -1)"
+          ISO="$(ls "${{ github.workspace }}/ISO"/*.iso | head -1 || true)"
           if [ -z "$ISO" ]; then
             echo "no ISO to publish"
             exit 0
