@@ -21,11 +21,9 @@ jobs:
           pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell git
       - uses: actions/checkout@v4
       - name: Build ISO
-        env:
-          OUTPUT_DIR: "${{ github.workspace }}/ISO"
         run: |
           chmod +x build.sh
-          ./build.sh 2>&1
+          OUTPUT_DIR="${OUTPUT_DIR:-${{ github.workspace }}/ISO}" ./build.sh 2>&1
       - name: Checksums
         run: |
           for f in "${{ github.workspace }}/ISO"/*.iso; do
