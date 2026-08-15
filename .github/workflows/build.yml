@@ -21,15 +21,12 @@ jobs:
           pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell git github-cli
       - uses: actions/checkout@v4
       - name: Build ISO
-        # NOTE: no OUTPUT_DIR override — build.sh defaults to ../ISO relative
-        # to the repo, which matches mkarchiso's output. Overriding mixes
-        # host/container workspace paths and breaks the ISO lookup.
         run: |
           chmod +x build.sh
           ./build.sh 2>&1
       - name: Checksums
         run: |
-          for f in "${{ github.workspace }}/ISO"/*.iso; do
+          for f in ./ISO/*.iso; do
             [ -f "$f" ] || continue
             sha256sum "$f" >> SHA256SUMS
           done
@@ -37,14 +34,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AcreetionOS-GNOME
-          path: "${{ github.workspace }}/ISO"
+          path: ./ISO/*.iso
           retention-days: 7
       - name: Publish Release
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
-          ISO="$(ls "${{ github.workspace }}/ISO"/*.iso | head -1 || true)"
+          ISO="$(ls ./ISO/*.iso | head -1 || true)"
           if [ -z "$ISO" ]; then
             echo "no ISO to publish"
             exit 0

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
 # profiledef.sh — AcreetionOS GNOME Edition
-# Self-contained archiso profile. Builds standalone from standard Arch mirrors.
-
 iso_name="AcreetionOS-GNOME"
 iso_label="acreetionOS_gnome_202608"
 iso_publisher="Acreetion OS Community"
@@ -10,7 +8,7 @@ iso_application="Acreetion OS GNOME Desktop Community Edition"
 iso_version="1.0"
 install_dir="arch"
 buildmodes=('iso')
-bootmodes=('bios.syslinux' 'uefi.grub' )
+bootmodes=('bios.syslinux' 'uefi.grub')
 arch="x86_64"
 pacman_conf="pacman.conf"
 airootfs_image_type="squashfs"
