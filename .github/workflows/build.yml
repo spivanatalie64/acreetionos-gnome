@@ -50,6 +50,11 @@ jobs:
           fi
           TAG="build-${{ github.run_number }}"
           if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            # GitHub release assets cap at 2GiB — xz-compress if needed
+            if [ "$(stat -c%s "$ISO")" -ge 2147483648 ]; then
+              echo "ISO over 2GiB — compressing for release"
+              xz -k -f -6 "$ISO" && ISO="$ISO.xz"
+            fi
             gh release create "$TAG" "$ISO" --repo "${{ github.repository }}"               --title "build #${{ github.run_number }}"               --notes "Automated CI build. Commit ${{ github.sha }}."
           else
             gh release upload "$TAG" "$ISO" --repo "${{ github.repository }}" --clobber
