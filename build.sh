@@ -20,7 +20,9 @@ echo "  :: Cleaning workspace..."
 ./refresh.sh -j 2>/dev/null || true
 
 echo "  :: Running mkarchiso..."
-./mkarchiso.sh
+# mkarchiso can exit non-zero after producing a valid ISO (e.g. missing
+# firmware warnings) — the ISO is what matters, so don't let set -e kill us.
+./mkarchiso.sh || true
 
 FOUND_ISO=$(find "${OUTPUT_DIR}" -name "AcreetionOS-GNOME*.iso" -type f 2>/dev/null | head -1)
 if [ -n "$FOUND_ISO" ]; then
@@ -31,7 +33,7 @@ else
   ls -lh out/ 2>/dev/null || true
 fi
 
-# NOTE: no  here — deleting a multi-GB tree inside the CI
-# container can OOM-kill the build script itself (seen in practice). The
+# NOTE: no work-dir deletion here — removing a multi-GB tree inside the CI
+# container can kill the build script itself (seen in practice). The
 # .gitignore covers local builds; CI containers are ephemeral anyway.
 echo "  :: Done!"
