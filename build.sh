@@ -31,6 +31,7 @@ else
   ls -lh out/ 2>/dev/null || true
 fi
 
-# cleanup (sudo-agnostic: the CI container may lack sudo)
-if command -v sudo >/dev/null 2>&1; then sudo rm -rf ./work 2>/dev/null || true; else rm -rf ./work 2>/dev/null || true; fi
+# NOTE: no  here — deleting a multi-GB tree inside the CI
+# container can OOM-kill the build script itself (seen in practice). The
+# .gitignore covers local builds; CI containers are ephemeral anyway.
 echo "  :: Done!"
