@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # build.sh — Build AcreetionOS-GNOME ISO
 # Usage: ./build.sh
-
-set -euo pipefail
+# NOTE: deliberately NO 'set -e' — mkarchiso exits non-zero after producing
+# a valid ISO (missing-firmware warnings etc). Every step is guarded.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/../ISO}"
@@ -20,11 +20,9 @@ echo "  :: Cleaning workspace..."
 ./refresh.sh -j 2>/dev/null || true
 
 echo "  :: Running mkarchiso..."
-# mkarchiso can exit non-zero after producing a valid ISO (e.g. missing
-# firmware warnings) — the ISO is what matters, so don't let set -e kill us.
 ./mkarchiso.sh || true
 
-FOUND_ISO=$(find "${OUTPUT_DIR}" -name "AcreetionOS-GNOME*.iso" -type f 2>/dev/null | head -1)
+FOUND_ISO=$(find "${OUTPUT_DIR}" -name "AcreetionOS-GNOME*.iso" -type f 2>/dev/null | head -1 || true)
 if [ -n "$FOUND_ISO" ]; then
   echo "  ✓ ISO: $FOUND_ISO"
   ls -lh "$FOUND_ISO" 2>/dev/null || true
