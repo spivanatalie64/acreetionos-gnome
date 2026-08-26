@@ -146,3 +146,27 @@ gnome-shell
 gnome-console
 nautilus
 gnome-tweaks
+
+################################################################################
+# QT6 LIBRARIES - Required for Calamares installer
+################################################################################
+qt6-5compat
+qt6-base
+qt6-declarative
+qt6-shadertools
+qt6-svg
+qt6-tools
+qt6-translations
+qt6-multimedia-ffmpeg
+qca-qt6
+kcrash
+
+################################################################################
+# CALAMARES INSTALLER - System installer and dependencies
+################################################################################
+calamares
+calamares-config
+kpmcore
+yaml-cpp
+libpwquality
+

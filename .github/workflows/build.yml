@@ -38,6 +38,27 @@ jobs:
           name: AcreetionOS-GNOME
           path: ./ISO/*.iso
           retention-days: 7
+      - name: Publish to ISO mirror
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.ISO_DEPLOY_KEY }}
+          EDITION: GNOME
+        run: |
+          set -euo pipefail
+          ISO="$(ls ./ISO/*.iso | head -1 || true)"
+          if [ -z "$ISO" ]; then echo "no ISO to publish"; exit 0; fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p 2400 us.iso.acreetionos.org >> ~/.ssh/known_hosts 2>/dev/null
+          BASE="$(basename "$ISO" .iso)"
+          DATED="${BASE}-$(date +%Y%m%d).iso"
+          LATEST="AcreetionOS-${EDITION}-latest.iso"
+          scp -P 2400 -i ~/.ssh/id_ed25519 "$ISO" "natalie@us.iso.acreetionos.org:/drive1/community/${DATED}"
+          ssh -p 2400 -i ~/.ssh/id_ed25519 natalie@us.iso.acreetionos.org "cd /drive1/community && ln -sfn '${DATED}' '${LATEST}' && : > SUMS.body && for f in *.iso; do sha256sum \"\$f\" >> SUMS.body; done && : > SUMS.alias && for l in *-latest.iso; do t=\$(readlink \"\$l\"); (grep \" \$t\\\$\" SUMS.body || true) | sed \"s/ \$t\\\$/ \$l/\" >> SUMS.alias; done && cat SUMS.body SUMS.alias > SHA256SUMS && rm -f SUMS.body SUMS.alias"
+          echo "Published ${DATED} (+ ${LATEST} alias) to iso.acreetionos.org/community/"
+
       - name: Publish Release
         if: github.event_name != 'pull_request'
         shell: bash

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=AcreetionOS Installer
+GenericName=Install AcreetionOS
+Comment=Calamales system installer
+Exec=/usr/bin/calamares.sh
+Terminal=false
+Categories=Installer;
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
