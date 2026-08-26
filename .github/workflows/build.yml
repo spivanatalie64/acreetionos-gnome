@@ -20,7 +20,7 @@ jobs:
       - name: Install deps
         run: |
           pacman -Sy --noconfirm archlinux-keyring
-          pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell git github-cli
+          pacman -S --noconfirm --needed archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell git github-cli openssh
       - uses: actions/checkout@v4
       - name: Build ISO
         run: |
