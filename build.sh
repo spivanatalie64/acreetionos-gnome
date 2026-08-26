@@ -3,7 +3,7 @@
 # NOTE: deliberately no 'set -e' — mkarchiso can exit non-zero after a valid ISO.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/ISO}"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit 1
 echo "  :: AcreetionOS-GNOME — Building ISO"
 echo "  :: Output: ${OUTPUT_DIR}"
 if [ -f ./generate-build-info.sh ]; then ./generate-build-info.sh; fi
