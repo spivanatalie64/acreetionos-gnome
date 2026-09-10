@@ -87,6 +87,8 @@ jobs:
             libibus \
             libgweather-4 \
             evolution-data-server \
+            python-argcomplete \
+            bash-completion \
             xmlto
 
       - name: Build patched GNOME 48 / XLibre packages
