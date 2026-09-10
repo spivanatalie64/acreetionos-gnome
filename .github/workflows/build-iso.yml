@@ -53,6 +53,10 @@ jobs:
             libcanberra \
             libdisplay-info \
             libxkbcommon \
+            libice \
+            libsm \
+            libxtst \
+            libxinerama \
             xorg-server-devel \
             graphene \
             colord \
