@@ -48,7 +48,21 @@ jobs:
             wayland \
             libinput \
             libdrm \
+            libei \
+            libwacom \
+            libcanberra \
+            libdisplay-info \
             libxkbcommon \
+            xorg-server-devel \
+            graphene \
+            colord \
+            lcms2 \
+            pipewire \
+            startup-notification \
+            gnome-settings-daemon \
+            gsettings-desktop-schemas \
+            gtk4 \
+            gtk3 \
             gnome-desktop \
             gnome-desktop-4 \
             python-docutils \
