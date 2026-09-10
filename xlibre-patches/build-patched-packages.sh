@@ -42,7 +42,17 @@ for entry in "${entries[@]}"; do
 
     export PKG_CONFIG_PATH="$build_dir/stage_pkgconfig:${PKG_CONFIG_PATH:-}"
     mkdir -p "$build_dir/stage_pkgconfig"
-    find "$stage_path/usr/lib/pkgconfig" "$stage_path/usr/share/pkgconfig" -type f 2>/dev/null -exec cp -f {} "$build_dir/stage_pkgconfig/" \; || true
+    find "$build_dir/stage"/*/usr/lib/pkgconfig "$build_dir/stage"/*/usr/share/pkgconfig -type f 2>/dev/null -exec cp -f {} "$build_dir/stage_pkgconfig/" \; || true
+
+    # Provide include headers from previous build stages (e.g. mutter-16 for gnome-shell)
+    local cflags=""
+    for incdir in "$build_dir/stage"/*/usr/include "$build_dir/stage"/*/usr/include/*; do
+        if [[ -d "$incdir" ]]; then
+            cflags+=" -I$incdir"
+        fi
+    done
+    export CFLAGS="${CFLAGS:-} $cflags"
+    export CXXFLAGS="${CXXFLAGS:-} $cflags"
 
     meson setup "$build_path" "$source_path" --prefix=/usr --buildtype=release $meson_options
     meson compile -C "$build_path"
