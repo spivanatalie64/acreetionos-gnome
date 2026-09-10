@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+# AcreetionOS Horizon - Terminal UI Recovery Utility
+# Interactive ncurses/dialog interface for system recovery.
+
+set -eo pipefail
+
+BACKEND="/usr/local/lib/acreetion/recovery-backend.sh"
+if [[ ! -f "$BACKEND" ]]; then
+    echo "Error: Recovery backend not found at $BACKEND" >&2
+    exit 1
+fi
+
+# Ensure root is read-write
+"$BACKEND" ensure-rw >/dev/null 2>&1 || true
+
+# Check if dialog is available, otherwise use text fallback
+USE_DIALOG=false
+command -v dialog &>/dev/null && USE_DIALOG=true
+
+# Temporary file for dialog output
+TMP_OUT=$(mktemp /tmp/acreetion-rec-tui.XXXXXX)
+trap 'rm -f "$TMP_OUT"' EXIT
+
+show_message() {
+    local title="$1"
+    local text="$2"
+    if $USE_DIALOG; then
+        dialog --title "$title" --msgbox "$text" 20 75
+    else
+        echo "=== $title ==="
+        echo "$text"
+        echo
+        read -rp "Press [Enter] to continue..."
+    fi
+}
+
+show_textbox() {
+    local title="$1"
+    local file="$2"
+    if $USE_DIALOG; then
+        dialog --title "$title" --textbox "$file" 22 78
+    else
+        echo "=== $title ==="
+        cat "$file" | less -R || cat "$file"
+        echo
+        read -rp "Press [Enter] to continue..."
+    fi
+}
+
+confirm_action() {
+    local title="$1"
+    local prompt="$2"
+    if $USE_DIALOG; then
+        dialog --title "$title" --yesno "$prompt" 10 60
+        return $?
+    else
+        read -rp "$prompt [y/N]: " choice
+        [[ "$choice" =~ ^[Yy]$ ]] && return 0 || return 1
+    fi
+}
+
+# Main recovery loop
+while true; do
+    # Gather hardware snapshot for the menu header
+    HARDWARE_SUMMARY=$("$BACKEND" scan 2>/dev/null)
+    
+    if $USE_DIALOG; then
+        dialog --clear --title "AcreetionOS Horizon - Recovery & Repair" \
+            --menu "Select a recovery option:\n\n$HARDWARE_SUMMARY" 22 78 12 \
+            1 "Hardware Diagnostics & System Info" \
+            2 "Display & Xorg Reset (Fix Blank Screen)" \
+            3 "Switch GPU Driver (Nouveau / Modesetting / NVIDIA)" \
+            4 "Rebuild Initramfs (Default & Fallback)" \
+            5 "Rebuild GRUB Bootloader & Reset Failure Counters" \
+            6 "Clear Package Manager Locks (pacman db.lck)" \
+            7 "Filesystem Check & Schedule fsck" \
+            8 "Reset User / Root Password" \
+            9 "Inspect Previous Boot & Display Logs" \
+            10 "Attempt Switching to Graphical (GUI) Recovery" \
+            11 "Open Root Shell (Console)" \
+            12 "Reboot System" \
+            13 "Power Off" 2>"$TMP_OUT" || true
+        
+        CHOICE=$(cat "$TMP_OUT")
+        [[ -z "$CHOICE" ]] && break
+    else
+        clear
+        echo "=========================================================="
+        echo "           AcreetionOS Horizon Recovery Utility           "
+        echo "=========================================================="
+        echo "$HARDWARE_SUMMARY"
+        echo "----------------------------------------------------------"
+        echo " 1) Hardware Diagnostics & System Info"
+        echo " 2) Display & Xorg Reset (Fix Blank Screen)"
+        echo " 3) Switch GPU Driver (Nouveau / Modesetting / NVIDIA)"
+        echo " 4) Rebuild Initramfs (Default & Fallback)"
+        echo " 5) Rebuild GRUB Bootloader & Reset Failure Counters"
+        echo " 6) Clear Package Manager Locks (pacman db.lck)"
+        echo " 7) Filesystem Check & Schedule fsck"
+        echo " 8) Reset User / Root Password"
+        echo " 9) Inspect Previous Boot & Display Logs"
+        echo "10) Attempt Switching to Graphical (GUI) Recovery"
+        echo "11) Open Root Shell (Console)"
+        echo "12) Reboot System"
+        echo "13) Power Off"
+        echo " q) Exit"
+        echo "----------------------------------------------------------"
+        read -rp "Select an option [1-13]: " CHOICE
+    fi
+
+    case "$CHOICE" in
+        1)
+            INFO_LOG=$(mktemp /tmp/acreetion-info.XXXXXX)
+            "$BACKEND" scan > "$INFO_LOG"
+            echo "" >> "$INFO_LOG"
+            echo "--- PCI Bus Detail ---" >> "$INFO_LOG"
+            lspci -nnk | grep -E -A3 "VGA|3D|Display" >> "$INFO_LOG" 2>/dev/null || true
+            echo "" >> "$INFO_LOG"
+            echo "--- Memory & Disks ---" >> "$INFO_LOG"
+            free -h >> "$INFO_LOG" 2>/dev/null || true
+            echo "" >> "$INFO_LOG"
+            lsblk >> "$INFO_LOG" 2>/dev/null || true
+            show_textbox "System Diagnostics" "$INFO_LOG"
+            rm -f "$INFO_LOG"
+            ;;
+        2)
+            if confirm_action "Reset Display Config" "This will remove custom Xorg screen pinning, reset monitors.xml, and restore default display autoconfiguration.\n\nProceed?"; then
+                OUTPUT=$("$BACKEND" fix-xorg 2>&1)
+                show_message "Display Configuration Reset" "$OUTPUT"
+            fi
+            ;;
+        3)
+            if $USE_DIALOG; then
+                dialog --title "Select GPU Driver" \
+                    --menu "Choose target graphics driver configuration:" 14 65 3 \
+                    1 "modesetting / nouveau (Open Source Fallback)" \
+                    2 "nvidia (Proprietary Driver)" 2>"$TMP_OUT" || true
+                DRV_CHOICE=$(cat "$TMP_OUT")
+            else
+                echo "1) modesetting / nouveau"
+                echo "2) nvidia"
+                read -rp "Select target driver [1-2]: " DRV_CHOICE
+            fi
+            
+            case "$DRV_CHOICE" in
+                1)
+                    OUTPUT=$("$BACKEND" switch-driver nouveau 2>&1)
+                    show_message "Driver Switch Result" "$OUTPUT"
+                    ;;
+                2)
+                    OUTPUT=$("$BACKEND" switch-driver nvidia 2>&1)
+                    show_message "Driver Switch Result" "$OUTPUT"
+                    ;;
+            esac
+            ;;
+        4)
+            OUTPUT=$("$BACKEND" rebuild-initramfs 2>&1)
+            show_message "Initramfs Rebuild Result" "$OUTPUT"
+            ;;
+        5)
+            OUTPUT=$("$BACKEND" rebuild-grub 2>&1)
+            show_message "GRUB Rebuild Result" "$OUTPUT"
+            ;;
+        6)
+            OUTPUT=$("$BACKEND" clear-locks 2>&1)
+            show_message "Package Locks Result" "$OUTPUT"
+            ;;
+        7)
+            OUTPUT=$("$BACKEND" check-fs 2>&1)
+            show_message "Filesystem Check" "$OUTPUT"
+            ;;
+        8)
+            USERS_LIST=$("$BACKEND" list-users)
+            TARGET_USER="root"
+            if $USE_DIALOG; then
+                dialog --title "Select User Account" --inputbox "Enter username to reset password for (Available: $USERS_LIST):" 10 60 "root" 2>"$TMP_OUT" || true
+                TARGET_USER=$(cat "$TMP_OUT")
+                dialog --insecure --passwordbox "Enter new password for $TARGET_USER:" 10 50 2>"$TMP_OUT" || true
+                NEW_PASS=$(cat "$TMP_OUT")
+            else
+                read -rp "Enter username to reset [root]: " TARGET_USER
+                TARGET_USER=${TARGET_USER:-root}
+                read -rsp "Enter new password for $TARGET_USER: " NEW_PASS
+                echo
+            fi
+            
+            if [[ -n "$TARGET_USER" && -n "$NEW_PASS" ]]; then
+                OUTPUT=$("$BACKEND" reset-password "$TARGET_USER" "$NEW_PASS" 2>&1)
+                show_message "Password Reset" "$OUTPUT"
+            fi
+            ;;
+        9)
+            if $USE_DIALOG; then
+                dialog --title "Inspect Logs" \
+                    --menu "Choose log stream to inspect:" 14 60 3 \
+                    1 "Previous Boot Errors (journalctl)" \
+                    2 "Xorg Display Server Log (Xorg.0.log)" \
+                    3 "Kernel Hardware Messages (dmesg)" 2>"$TMP_OUT" || true
+                LOG_CHOICE=$(cat "$TMP_OUT")
+            else
+                echo "1) Previous Boot Errors (journalctl)"
+                echo "2) Xorg Display Server Log (Xorg.0.log)"
+                echo "3) Kernel Hardware Messages (dmesg)"
+                read -rp "Select log to view [1-3]: " LOG_CHOICE
+            fi
+            
+            LOG_FILE=$(mktemp /tmp/acreetion-log.XXXXXX)
+            case "$LOG_CHOICE" in
+                1) "$BACKEND" get-log journal > "$LOG_FILE" ;;
+                2) "$BACKEND" get-log xorg > "$LOG_FILE" ;;
+                3) "$BACKEND" get-log dmesg > "$LOG_FILE" ;;
+            esac
+            show_textbox "System Log Viewer" "$LOG_FILE"
+            rm -f "$LOG_FILE"
+            ;;
+        10)
+            if command -v Xorg &>/dev/null; then
+                clear
+                echo "Attempting to switch to Graphical Recovery Mode..."
+                sleep 1
+                if xinit /usr/local/bin/acreetion-recovery-gui -- :1 vt1 2>/dev/null; then
+                    exit 0
+                else
+                    show_message "GUI Launch Failed" "The graphical recovery session could not start. Remaining in TUI mode."
+                fi
+            else
+                show_message "GUI Unavailable" "Xorg display server binary not found."
+            fi
+            ;;
+        11)
+            clear
+            echo "=========================================================="
+            echo "Entering AcreetionOS Emergency Root Shell."
+            echo "Type 'exit' to return to the Recovery Menu."
+            echo "=========================================================="
+            echo
+            /bin/bash --login || true
+            ;;
+        12)
+            if confirm_action "Reboot" "Are you sure you want to reboot the system now?"; then
+                clear
+                echo "Rebooting system..."
+                systemctl reboot 2>/dev/null || reboot
+                exit 0
+            fi
+            ;;
+        13)
+            if confirm_action "Power Off" "Are you sure you want to shut down the machine?"; then
+                clear
+                echo "Powering off..."
+                systemctl poweroff 2>/dev/null || poweroff
+                exit 0
+            fi
+            ;;
+        q|Q)
+            break
+            ;;
+    esac
+done
+
+clear
+echo "Exited AcreetionOS Recovery."

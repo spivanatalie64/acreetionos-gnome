@@ -1,14 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
 
-wifi-connection
+if [[ -f /mkinitcpio/mkinitcpio.conf ]]; then
+    cp /mkinitcpio/mkinitcpio.conf /etc/mkinitcpio.conf
+fi
 
-cp /mkinitcpio/mkinitcpio.conf /etc/mkinitcpio.conf
-# Don't copy archiso.conf - Calamares will read from it and copy archiso hooks to installed system
-# cp /mkinitcpio/archiso.conf /etc/mkinitcpio.conf.d/archiso.conf
-
-pacman -Sy 
-
-sudo pacman -S calamares-config --noconfirm --overwrite '*'
-
-calamares -d 8 > /root/calamares.log
-
-
+exec /usr/bin/python3 /usr/local/lib/horizon-installer/installer.py

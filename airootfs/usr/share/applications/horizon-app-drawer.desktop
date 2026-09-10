@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=App Drawer & Hub
+Comment=Launch, manage, and install desktop and containerized applications
+Exec=/usr/local/bin/horizon-app-drawer
+Icon=view-app-grid
+Terminal=false
+Categories=Utility;System;
+Keywords=apps;drawer;software;store;timeshift;

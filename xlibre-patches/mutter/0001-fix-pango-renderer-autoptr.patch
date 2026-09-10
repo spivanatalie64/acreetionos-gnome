@@ -1,0 +1,20 @@
+--- a/clutter/clutter/pango/clutter-pango-private.h
++++ b/clutter/clutter/pango/clutter-pango-private.h
+@@ -23,6 +23,7 @@
+ 
+ #include "clutter/clutter-types.h"
+ #include "cogl/cogl.h"
++#include <pango/pango.h>
+ 
+ G_BEGIN_DECLS
+ 
+@@ -79,7 +80,9 @@
+ 
+ GType clutter_pango_renderer_get_type (void) G_GNUC_CONST;
+ 
++#if !defined(PANGO_VERSION_CHECK) || !PANGO_VERSION_CHECK(1, 56, 0)
+ G_DEFINE_AUTOPTR_CLEANUP_FUNC (PangoRenderer, g_object_unref)
++#endif
+ 
+ PangoRenderer *clutter_pango_renderer_new (CoglFramebuffer *fb);
+ 

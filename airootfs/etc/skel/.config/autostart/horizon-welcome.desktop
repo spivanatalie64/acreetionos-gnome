@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Horizon Onboarding
+Exec=/usr/local/bin/horizon-firstboot.sh
+Icon=preferences-desktop
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Arch Linux Apps (Distrobox)
+Comment=Run standard Arch Linux software and pacman inside a dedicated container
+Exec=/usr/local/bin/horizon-apps
+Icon=utilities-terminal
+Terminal=true
+Categories=System;Utility;Development;
+Keywords=arch;distrobox;container;pacman;

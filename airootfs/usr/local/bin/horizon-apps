@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Ensure user subuid and subgid mappings are initialized for rootless podman
+if [[ ! -f /etc/subuid ]] || ! grep -q "^$USER:" /etc/subuid 2>/dev/null; then
+    sudo touch /etc/subuid /etc/subgid
+    if ! grep -q "^$USER:" /etc/subuid 2>/dev/null; then
+        echo "$USER:100000:65536" | sudo tee -a /etc/subuid >/dev/null
+        echo "$USER:100000:65536" | sudo tee -a /etc/subgid >/dev/null
+    fi
+fi
+
+CONTAINER_NAME="arch-apps"
+ROOTFS_TAR="/var/lib/distrobox/archlinux-rootfs.tar.zst"
+IMAGE_NAME="docker.io/library/archlinux:latest"
+
+echo "=================================================="
+echo " AcreetionOS Horizon - Arch Linux Distrobox Setup"
+echo "=================================================="
+
+# Check if the container already exists
+if distrobox list | grep -q "\b${CONTAINER_NAME}\b"; then
+    echo "Container '${CONTAINER_NAME}' is already initialized."
+else
+    echo "Initializing '${CONTAINER_NAME}' container for user applications..."
+    
+    # Check if a bundled rootfs tarball exists locally on the system image
+    if [[ -f "$ROOTFS_TAR" ]]; then
+        echo "Found local offline rootfs: $ROOTFS_TAR"
+        echo "Importing rootfs into podman..."
+        podman import "$ROOTFS_TAR" "localhost/horizon-arch-rootfs:latest"
+        distrobox create --name "$CONTAINER_NAME" --image "localhost/horizon-arch-rootfs:latest" --yes
+    else
+        echo "Creating container using Arch Linux base image..."
+        distrobox create --name "$CONTAINER_NAME" --image "$IMAGE_NAME" --yes || {
+            echo "Failed to create container via image. Checking local fallback..."
+            exit 1
+        }
+    fi
+    echo "Container '${CONTAINER_NAME}' created successfully."
+fi
+
+# Enter or run command inside the application container
+if [[ $# -eq 0 ]]; then
+    echo "Entering Arch Linux application environment..."
+    exec distrobox enter "$CONTAINER_NAME"
+else
+    exec distrobox enter "$CONTAINER_NAME" -- "$@"
+fi

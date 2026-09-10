@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLI_BIN="/usr/local/bin/horizon-image-update"
+
+if [[ ! -x "$CLI_BIN" ]]; then
+    echo "error: $CLI_BIN is not available" >&2
+    exit 1
+fi
+
+if [[ -z "${DISPLAY:-}" ]] || ! command -v zenity >/dev/null 2>&1; then
+    echo "Horizon image update GUI requires a desktop session and zenity." >&2
+    exit 1
+fi
+
+ACTION=$(zenity \
+    --list \
+    --title="Horizon Image Updates" \
+    --text="Choose an image update action:" \
+    --column="Action" \
+    --radiolist \
+    --hide-header \
+    --width=420 \
+    --height=260 \
+    TRUE "check" \
+    TRUE "stage" \
+    TRUE "apply" \
+    TRUE "status" 2>/dev/null || exit 0)
+
+[[ -n "$ACTION" ]] || exit 0
+
+OUTPUT=$($CLI_BIN "$ACTION" 2>&1)
+STATUS=$?
+
+if [[ $STATUS -ne 0 ]]; then
+    zenity --error \
+        --title="Horizon image update failed" \
+        --text="Action: $ACTION\n\n$OUTPUT" \
+        --width=640 \
+        --height=260
+    exit $STATUS
+fi
+
+zenity --info \
+    --title="Horizon image update" \
+    --text="Action: $ACTION\n\n$OUTPUT" \
+    --width=640 \
+    --height=260

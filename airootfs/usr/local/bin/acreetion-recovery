@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# AcreetionOS Horizon - Master Recovery Launcher
+# Automatically probes hardware and selects GUI or TUI mode with bidirectional fallback.
+
+set -o pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+
+BACKEND="/usr/local/lib/acreetion/recovery-backend.sh"
+GUI_BIN="/usr/local/bin/acreetion-recovery-gui"
+TUI_BIN="/usr/local/bin/acreetion-recovery-tui"
+
+if [[ ! -x "$BACKEND" ]]; then
+    echo "Fatal: AcreetionOS recovery backend missing or not executable at $BACKEND" >&2
+    exit 1
+fi
+
+# Ensure root filesystem is writable
+"$BACKEND" ensure-rw >/dev/null 2>&1 || true
+
+FORCE_TUI=false
+FORCE_GUI=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --tui|-t) FORCE_TUI=true ;;
+        --gui|-g) FORCE_GUI=true ;;
+        --scan|-s)
+            "$BACKEND" scan
+            exit 0
+            ;;
+        --help|-h)
+            echo "Usage: acreetion-recovery [options]"
+            echo "Options:"
+            echo "  --tui, -t     Force Terminal (TUI) recovery mode"
+            echo "  --gui, -g     Force Graphical (GUI) recovery mode"
+            echo "  --scan, -s    Run hardware scan and display results"
+            echo "  --help, -h    Show this help text"
+            exit 0
+            ;;
+    esac
+done
+
+# Run hardware autoscan
+HW_JSON=$("$BACKEND" scan --json 2>/dev/null || echo '{"gui_capable":false}')
+
+GUI_CAPABLE=false
+if echo "$HW_JSON" | grep -q '"gui_capable":\s*true'; then
+    GUI_CAPABLE=true
+fi
+
+# Check kernel command-line for safe mode / text flags
+if grep -qE 'nomodeset|acreetion\.tui=1|\btext\b' /proc/cmdline 2>/dev/null; then
+    FORCE_TUI=true
+fi
+
+# If already inside an existing X11/Wayland desktop session
+if [[ -n "${DISPLAY:-}" && -x "$GUI_BIN" && "$FORCE_TUI" != true ]]; then
+    exec "$GUI_BIN"
+fi
+
+# Determine whether to launch GUI or TUI based on autoscan
+if [[ "$GUI_CAPABLE" == true && "$FORCE_TUI" != true ]] || [[ "$FORCE_GUI" == true ]]; then
+    echo "=========================================================="
+    echo "       AcreetionOS Horizon Hardware Recovery System       "
+    echo "=========================================================="
+    echo "[AUTOSCAN] Hardware display acceleration & KMS active."
+    echo "[AUTOSCAN] Preparing Graphical Recovery Interface..."
+    
+    # Allow 2-second override window if on interactive console
+    if [[ -t 0 ]]; then
+        echo "Press 'T' within 2 seconds for Terminal (TUI) mode..."
+        key=""
+        read -r -t 2 -n 1 key 2>/dev/null || true
+        echo
+        if [[ "$key" == "t" || "$key" == "T" ]]; then
+            echo "[OVERRIDE] Terminal mode requested by user."
+            exec "$TUI_BIN"
+        fi
+    fi
+
+    # Launch standalone X session with recovery GUI
+    if command -v xinit &>/dev/null && [[ -x "$GUI_BIN" ]]; then
+        VT_ARG=""
+        if [[ -r /dev/tty0 ]]; then
+            CUR_TTY=$(tty 2>/dev/null | grep -o 'tty[0-9]*' || echo "tty1")
+            VT_ARG="vt${CUR_TTY#tty}"
+        fi
+
+        xinit "$GUI_BIN" -- :1 ${VT_ARG} -keeptty >/var/log/acreetion-recovery-xorg.log 2>&1
+        EXIT_CODE=$?
+
+        # Code 42: User clicked "Switch to TUI" inside the GUI
+        if [[ $EXIT_CODE -eq 42 ]]; then
+            clear
+            echo "[SWITCH] Transitioning to Terminal Recovery Interface..."
+            exec "$TUI_BIN"
+        elif [[ $EXIT_CODE -ne 0 ]]; then
+            echo "[WARNING] Graphical session failed (code $EXIT_CODE). See /var/log/acreetion-recovery-xorg.log"
+            echo "[AUTOSCAN] Automatically falling back to Terminal (TUI) Mode..."
+            sleep 1
+            exec "$TUI_BIN"
+        fi
+        exit 0
+    fi
+fi
+
+# Fallback or chosen: Terminal UI Recovery
+echo "[AUTOSCAN] Launching Terminal (TUI) Recovery Interface..."
+exec "$TUI_BIN"

@@ -1,0 +1,457 @@
+#!/usr/bin/env python3
+"""
+AcreetionOS Horizon - Graphical Recovery Utility
+Native GTK interface for system diagnostics, hardware detection, and automated repair.
+"""
+
+import sys
+import os
+import json
+import subprocess
+import threading
+import gi
+
+gi.require_version('Gtk', '3.0')
+gi.require_version('GLib', '2.0')
+from gi.repository import Gtk, GLib, Pango
+
+BACKEND = "/usr/local/lib/acreetion/recovery-backend.sh"
+
+
+class RecoveryApp(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="AcreetionOS Recovery & Repair")
+        self.set_default_size(900, 640)
+        self.set_position(Gtk.WindowPosition.CENTER)
+
+        # Prefer dark theme to match Horizon aesthetic
+        settings = Gtk.Settings.get_default()
+        if settings:
+            settings.set_property("gtk-application-prefer-dark-theme", True)
+
+        self.backend = BACKEND
+        self.hw_info = self.load_hardware_info()
+
+        self.init_ui()
+
+    def load_hardware_info(self):
+        try:
+            res = subprocess.run([self.backend, "scan", "--json"], capture_output=True, text=True, check=True)
+            return json.loads(res.stdout)
+        except Exception as e:
+            return {
+                "boot_mode": "Unknown",
+                "nomodeset": False,
+                "gui_capable": True,
+                "kms_active": False,
+                "xorg_available": True,
+                "root_rw": False,
+                "root_usage": "N/A",
+                "has_nvidia": False,
+                "has_amd": False,
+                "has_intel": False,
+                "has_vm": False,
+                "gpus": ["Detection error: " + str(e)],
+                "displays": [],
+                "failed_units": [],
+                "journal_errors_prev_boot": 0
+            }
+
+    def init_ui(self):
+        # HeaderBar
+        header = Gtk.HeaderBar()
+        header.set_show_close_button(True)
+        header.set_title("AcreetionOS Recovery")
+        boot_label = f"Boot: {self.hw_info.get('boot_mode', 'Unknown')} | Root: {self.hw_info.get('root_usage', 'N/A')}"
+        header.set_subtitle(boot_label)
+        self.set_titlebar(header)
+
+        # Header buttons
+        btn_refresh = Gtk.Button(label="Refresh Scan")
+        btn_refresh.connect("clicked", self.on_refresh_clicked)
+        header.pack_start(btn_refresh)
+
+        btn_tui = Gtk.Button(label="Switch to TUI")
+        btn_tui.connect("clicked", self.on_switch_to_tui)
+        header.pack_end(btn_tui)
+
+        # Main Layout: Vertical Box
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        vbox.set_margin_start(16)
+        vbox.set_margin_end(16)
+        vbox.set_margin_top(12)
+        vbox.set_margin_bottom(12)
+        self.add(vbox)
+
+        # Notebook for categories
+        notebook = Gtk.Notebook()
+        vbox.pack_start(notebook, True, True, 0)
+
+        # Tab 1: Overview & Diagnostics
+        notebook.append_page(self.create_overview_tab(), Gtk.Label(label="System Overview"))
+
+        # Tab 2: Display & Graphics
+        notebook.append_page(self.create_graphics_tab(), Gtk.Label(label="Display & GPU"))
+
+        # Tab 3: Bootloader & Kernel
+        notebook.append_page(self.create_boot_tab(), Gtk.Label(label="Boot & Kernel"))
+
+        # Tab 4: System & Accounts
+        notebook.append_page(self.create_system_tab(), Gtk.Label(label="System & Accounts"))
+
+        # Tab 5: Logs & Forensics
+        notebook.append_page(self.create_logs_tab(), Gtk.Label(label="Log Viewer"))
+
+        # Live Action Output Console
+        console_frame = Gtk.Frame(label="Operation Progress & Output")
+        vbox.pack_start(console_frame, False, True, 0)
+
+        c_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        c_vbox.set_margin_start(8)
+        c_vbox.set_margin_end(8)
+        c_vbox.set_margin_top(8)
+        c_vbox.set_margin_bottom(8)
+        console_frame.add(c_vbox)
+
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_min_content_height(110)
+        self.log_buffer = Gtk.TextBuffer()
+        self.log_view = Gtk.TextView(buffer=self.log_buffer)
+        self.log_view.set_editable(False)
+        self.log_view.set_cursor_visible(False)
+        self.log_view.override_font(Pango.FontDescription("monospace 9"))
+        scroller.add(self.log_view)
+        c_vbox.pack_start(scroller, True, True, 0)
+
+        self.spinner = Gtk.Spinner()
+        c_vbox.pack_start(self.spinner, False, False, 0)
+
+        # Bottom Action Bar
+        bottom_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        vbox.pack_start(bottom_bar, False, False, 0)
+
+        btn_shell = Gtk.Button(label="Open Root Shell")
+        btn_shell.connect("clicked", self.on_open_shell)
+        bottom_bar.pack_start(btn_shell, False, False, 0)
+
+        spacer = Gtk.Box()
+        bottom_bar.pack_start(spacer, True, True, 0)
+
+        btn_reboot = Gtk.Button(label="Reboot System")
+        btn_reboot.get_style_context().add_class("suggested-action")
+        btn_reboot.connect("clicked", self.on_reboot)
+        bottom_bar.pack_end(btn_reboot, False, False, 0)
+
+        btn_poweroff = Gtk.Button(label="Power Off")
+        btn_poweroff.get_style_context().add_class("destructive-action")
+        btn_poweroff.connect("clicked", self.on_poweroff)
+        bottom_bar.pack_end(btn_poweroff, False, False, 0)
+
+        self.append_log("AcreetionOS Recovery Environment ready. Hardware scan complete.")
+
+    def create_overview_tab(self):
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        vbox.set_margin_start(16)
+        vbox.set_margin_end(16)
+        vbox.set_margin_top(16)
+        vbox.set_margin_bottom(16)
+
+        title = Gtk.Label()
+        title.set_markup("<b><big>Hardware Autoscan & Diagnostics</big></b>")
+        title.set_halign(Gtk.Align.START)
+        vbox.pack_start(title, False, False, 0)
+
+        grid = Gtk.Grid()
+        grid.set_column_spacing(24)
+        grid.set_row_spacing(10)
+        vbox.pack_start(grid, False, False, 0)
+
+        info_items = [
+            ("Firmware Boot Mode:", self.hw_info.get("boot_mode", "Unknown")),
+            ("Root Filesystem:", f"{self.hw_info.get('root_usage', 'N/A')} (Read-Write: {self.hw_info.get('root_rw')})"),
+            ("Kernel Flags:", "nomodeset=active (Safe Mode)" if self.hw_info.get("nomodeset") else "Standard KMS mode"),
+            ("Connected Displays:", ", ".join(self.hw_info.get("displays", [])) or "None detected"),
+            ("Previous Boot Errors:", f"{self.hw_info.get('journal_errors_prev_boot', 0)} critical messages recorded"),
+        ]
+
+        gpus = self.hw_info.get("gpus", [])
+        if gpus:
+            info_items.append(("Detected GPUs:", "\n".join(gpus)))
+
+        failed_units = self.hw_info.get("failed_units", [])
+        clean_failed = [u for u in failed_units if u]
+        if clean_failed:
+            info_items.append(("Failed Services:", ", ".join(clean_failed)))
+
+        for row, (k, v) in enumerate(info_items):
+            lbl_k = Gtk.Label(label=k)
+            lbl_k.set_halign(Gtk.Align.START)
+            lbl_k.override_font(Pango.FontDescription("bold"))
+            grid.attach(lbl_k, 0, row, 1, 1)
+
+            lbl_v = Gtk.Label(label=str(v))
+            lbl_v.set_halign(Gtk.Align.START)
+            lbl_v.set_line_wrap(True)
+            grid.attach(lbl_v, 1, row, 1, 1)
+
+        return vbox
+
+    def create_graphics_tab(self):
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        vbox.set_margin_start(16)
+        vbox.set_margin_end(16)
+        vbox.set_margin_top(16)
+        vbox.set_margin_bottom(16)
+
+        desc = Gtk.Label()
+        desc.set_markup("<b>Display & Xorg Configuration Repair</b>\n"
+                        "Use these tools if the system freezes before login, displays a black screen, "
+                        "or shows 'Device or resource busy' DRM conflicts.")
+        desc.set_halign(Gtk.Align.START)
+        vbox.pack_start(desc, False, False, 0)
+
+        # Card 1: Reset Xorg & monitors.xml
+        card1 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        vbox.pack_start(card1, False, False, 0)
+        btn_reset_xorg = Gtk.Button(label="Reset Display & Xorg Configurations")
+        btn_reset_xorg.connect("clicked", lambda b: self.run_async_backend(["fix-xorg"]))
+        card1.pack_start(btn_reset_xorg, False, False, 0)
+        lbl1 = Gtk.Label(label="Removes custom PCI pinning (10-nvidia-pin.conf) and resets monitor geometry.")
+        card1.pack_start(lbl1, False, False, 0)
+
+        # Card 2: Driver Switcher
+        card2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        vbox.pack_start(card2, False, False, 0)
+        btn_nouveau = Gtk.Button(label="Switch to Open-Source (Modesetting / Nouveau)")
+        btn_nouveau.connect("clicked", lambda b: self.run_async_backend(["switch-driver", "nouveau"]))
+        card2.pack_start(btn_nouveau, False, False, 0)
+        lbl2 = Gtk.Label(label="Unblacklists nouveau and removes early proprietary NVIDIA KMS modules.")
+        card2.pack_start(lbl2, False, False, 0)
+
+        # Card 3: Switch back to NVIDIA
+        card3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        vbox.pack_start(card3, False, False, 0)
+        btn_nvidia = Gtk.Button(label="Re-enable Proprietary NVIDIA Drivers")
+        btn_nvidia.connect("clicked", lambda b: self.run_async_backend(["switch-driver", "nvidia"]))
+        card3.pack_start(btn_nvidia, False, False, 0)
+        lbl3 = Gtk.Label(label="Blacklists nouveau and adds early KMS modules to mkinitcpio.")
+        card3.pack_start(lbl3, False, False, 0)
+
+        return vbox
+
+    def create_boot_tab(self):
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        vbox.set_margin_start(16)
+        vbox.set_margin_end(16)
+        vbox.set_margin_top(16)
+        vbox.set_margin_bottom(16)
+
+        desc = Gtk.Label()
+        desc.set_markup("<b>Bootloader & Kernel Image Repair</b>\n"
+                        "Rebuild the system initial ramdisk and GRUB configuration if boot hangs early or after kernel updates.")
+        desc.set_halign(Gtk.Align.START)
+        vbox.pack_start(desc, False, False, 0)
+
+        # Initramfs
+        card1 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        vbox.pack_start(card1, False, False, 0)
+        btn_initramfs = Gtk.Button(label="Rebuild All Initramfs Images")
+        btn_initramfs.connect("clicked", lambda b: self.run_async_backend(["rebuild-initramfs"]))
+        card1.pack_start(btn_initramfs, False, False, 0)
+        lbl1 = Gtk.Label(label="Re-runs mkinitcpio -P generating both default and fallback unstripped images.")
+        card1.pack_start(lbl1, False, False, 0)
+
+        # GRUB
+        card2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        vbox.pack_start(card2, False, False, 0)
+        btn_grub = Gtk.Button(label="Rebuild GRUB & Clear Failure Counters")
+        btn_grub.connect("clicked", lambda b: self.run_async_backend(["rebuild-grub"]))
+        card2.pack_start(btn_grub, False, False, 0)
+        lbl2 = Gtk.Label(label="Regenerates /boot/grub/grub.cfg and resets boot_counter to 0.")
+        card2.pack_start(lbl2, False, False, 0)
+
+        return vbox
+
+    def create_system_tab(self):
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        vbox.set_margin_start(16)
+        vbox.set_margin_end(16)
+        vbox.set_margin_top(16)
+        vbox.set_margin_bottom(16)
+
+        # Package locks
+        card1 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        vbox.pack_start(card1, False, False, 0)
+        btn_locks = Gtk.Button(label="Clear Package Manager Locks")
+        btn_locks.connect("clicked", lambda b: self.run_async_backend(["clear-locks"]))
+        card1.pack_start(btn_locks, False, False, 0)
+        lbl1 = Gtk.Label(label="Deletes stale /var/lib/pacman/db.lck if an update crashed halfway.")
+        card1.pack_start(lbl1, False, False, 0)
+
+        # Filesystem
+        card2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        vbox.pack_start(card2, False, False, 0)
+        btn_fs = Gtk.Button(label="Schedule Filesystem Check (FSCK)")
+        btn_fs.connect("clicked", lambda b: self.run_async_backend(["check-fs"]))
+        card2.pack_start(btn_fs, False, False, 0)
+        lbl2 = Gtk.Label(label="Schedules automatic fsck disk repair on the next reboot.")
+        card2.pack_start(lbl2, False, False, 0)
+
+        # Password Reset
+        pw_frame = Gtk.Frame(label="Account Password Reset")
+        vbox.pack_start(pw_frame, False, False, 0)
+
+        pw_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        pw_box.set_margin_start(10)
+        pw_box.set_margin_end(10)
+        pw_box.set_margin_top(8)
+        pw_box.set_margin_bottom(8)
+        pw_frame.add(pw_box)
+
+        input_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        pw_box.pack_start(input_row, False, False, 0)
+
+        input_row.pack_start(Gtk.Label(label="Username:"), False, False, 0)
+        self.entry_user = Gtk.Entry()
+        self.entry_user.set_text("root")
+        input_row.pack_start(self.entry_user, False, False, 0)
+
+        input_row.pack_start(Gtk.Label(label="New Password:"), False, False, 0)
+        self.entry_pass = Gtk.Entry()
+        self.entry_pass.set_visibility(False)
+        input_row.pack_start(self.entry_pass, False, False, 0)
+
+        btn_set_pw = Gtk.Button(label="Change Password")
+        btn_set_pw.connect("clicked", self.on_reset_password_clicked)
+        input_row.pack_start(btn_set_pw, False, False, 0)
+
+        return vbox
+
+    def create_logs_tab(self):
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        vbox.set_margin_start(16)
+        vbox.set_margin_end(16)
+        vbox.set_margin_top(12)
+        vbox.set_margin_bottom(12)
+
+        ctrl_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        vbox.pack_start(ctrl_bar, False, False, 0)
+
+        btn_jnl = Gtk.Button(label="Previous Boot Journal")
+        btn_jnl.connect("clicked", lambda b: self.load_log("journal"))
+        ctrl_bar.pack_start(btn_jnl, False, False, 0)
+
+        btn_xorg = Gtk.Button(label="Xorg Server Log")
+        btn_xorg.connect("clicked", lambda b: self.load_log("xorg"))
+        ctrl_bar.pack_start(btn_xorg, False, False, 0)
+
+        btn_dmesg = Gtk.Button(label="Kernel Warnings (dmesg)")
+        btn_dmesg.connect("clicked", lambda b: self.load_log("dmesg"))
+        ctrl_bar.pack_start(btn_dmesg, False, False, 0)
+
+        scroller = Gtk.ScrolledWindow()
+        self.view_logs_buffer = Gtk.TextBuffer()
+        self.view_logs_text = Gtk.TextView(buffer=self.view_logs_buffer)
+        self.view_logs_text.set_editable(False)
+        self.view_logs_text.override_font(Pango.FontDescription("monospace 9"))
+        scroller.add(self.view_logs_text)
+        vbox.pack_start(scroller, True, True, 0)
+
+        return vbox
+
+    def append_log(self, text):
+        end_iter = self.log_buffer.get_end_iter()
+        self.log_buffer.insert(end_iter, text.strip() + "\n")
+        self.log_view.scroll_to_iter(self.log_buffer.get_end_iter(), 0.0, False, 0.0, 0.0)
+
+    def run_async_backend(self, args):
+        self.spinner.start()
+        self.append_log(f">>> Running: {args[0]}...")
+
+        def worker():
+            try:
+                proc = subprocess.run([self.backend] + args, capture_output=True, text=True)
+                out = proc.stdout.strip()
+                err = proc.stderr.strip()
+                GLib.idle_add(self._on_command_finished, out, err, proc.returncode)
+            except Exception as ex:
+                GLib.idle_add(self._on_command_finished, "", str(ex), 1)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_command_finished(self, out, err, ret):
+        self.spinner.stop()
+        if out:
+            self.append_log(out)
+        if err:
+            self.append_log(f"Error: {err}")
+        if ret == 0:
+            self.append_log(">>> Operation completed successfully.\n")
+        else:
+            self.append_log(f">>> Operation exited with code {ret}.\n")
+
+    def load_log(self, log_type):
+        def worker():
+            try:
+                res = subprocess.run([self.backend, "get-log", log_type], capture_output=True, text=True)
+                text = res.stdout if res.stdout else "No log data available."
+                GLib.idle_add(self.view_logs_buffer.set_text, text)
+            except Exception as ex:
+                GLib.idle_add(self.view_logs_buffer.set_text, f"Failed to load log: {ex}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def on_reset_password_clicked(self, btn):
+        user = self.entry_user.get_text().strip()
+        pw = self.entry_pass.get_text().strip()
+        if not user or not pw:
+            self.append_log("Error: Username and new password must not be empty.")
+            return
+        self.run_async_backend(["reset-password", user, pw])
+        self.entry_pass.set_text("")
+
+    def on_refresh_clicked(self, btn):
+        self.hw_info = self.load_hardware_info()
+        self.append_log("Refreshed hardware diagnostics.")
+
+    def on_switch_to_tui(self, btn):
+        # Exit with special code 42 to signal caller to launch TUI
+        sys.exit(42)
+
+    def on_open_shell(self, btn):
+        for term in ["gnome-terminal", "gnome-console", "xterm", "x-terminal-emulator"]:
+            if subprocess.run(["command", "-v", term], capture_output=True, shell=True).returncode == 0:
+                subprocess.Popen([term])
+                return
+        self.append_log("No terminal emulator found. Use 'Switch to TUI' for shell access.")
+
+    def on_reboot(self, btn):
+        dialog = Gtk.MessageDialog(transient_for=self, flags=0, message_type=Gtk.MessageType.QUESTION,
+                                   buttons=Gtk.ButtonsType.YES_NO, text="Reboot System?")
+        dialog.format_secondary_text("Are you sure you want to reboot the system now?")
+        resp = dialog.run()
+        dialog.destroy()
+        if resp == Gtk.ResponseType.YES:
+            subprocess.run(["systemctl", "reboot"])
+            sys.exit(0)
+
+    def on_poweroff(self, btn):
+        dialog = Gtk.MessageDialog(transient_for=self, flags=0, message_type=Gtk.MessageType.QUESTION,
+                                   buttons=Gtk.ButtonsType.YES_NO, text="Power Off Machine?")
+        dialog.format_secondary_text("Are you sure you want to shut down the system?")
+        resp = dialog.run()
+        dialog.destroy()
+        if resp == Gtk.ResponseType.YES:
+            subprocess.run(["systemctl", "poweroff"])
+            sys.exit(0)
+
+
+def main():
+    app = RecoveryApp()
+    app.connect("destroy", Gtk.main_quit)
+    app.show_all()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

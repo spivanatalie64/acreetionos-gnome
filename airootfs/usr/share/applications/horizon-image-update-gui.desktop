@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Horizon Image Updates
+Comment=Review and apply Horizon image updates
+Exec=/usr/local/bin/horizon-image-update-gui
+Terminal=false
+Categories=System;Utility;
+Icon=system-software-update
+StartupNotify=true
+X-GNOME-Autostart-enabled=false

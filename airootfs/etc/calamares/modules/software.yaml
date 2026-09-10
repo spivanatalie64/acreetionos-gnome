@@ -1,0 +1,144 @@
+- name: "Extra TTF Fonts"
+  description: "Installs Additional Fonts"
+  critical: false
+  hidden: true
+  selected: true
+  expanded: true
+  packages:
+    - ttf-anonymous-pro
+    - ttf-caladea
+    - ttf-carlito
+    - ttf-cascadia-code
+    - ttf-cormorant
+    - ttf-croscore
+    - ttf-eurof
+    - ttf-fantasque-sans-mono
+    - ttf-font-awesome
+    - ttf-liberation
+    - ttf-nerd-fonts-symbols
+    - ttf-nerd-fonts-symbols-mono
+    - ttf-roboto
+    - ttf-roboto-mono
+    - ttf-ubuntu-font-family
+- name: "Gaming Applications"
+  description: "Installs Gaming Applications"
+  critical: false
+  hidden: false
+  selected: false
+  expanded: true
+  packages:
+    - lutris
+    - steam
+    - steam-native-runtime
+    - lutris
+    - heroic-games-launcher-bin
+    - bottles
+- name: "Chat Software"
+  description: "Software"
+  critical: false
+  hidden: false
+  selected: false
+  expanded: true
+  packages:
+   - vesktop
+   - discord
+   - messenger-pwa
+   - google-messages
+   - root-messenger
+- name: "Software"
+  description: "Software"
+  critical: false
+  hidden: false
+  selected: false
+  expanded: true
+  packages:
+   - obs-studio
+   - v412loopback-dkms
+   - libreoffice-fresh
+- name: "Browsers-vpn"
+  description: "Browsers-vpn-browseros-bin(ai browser)"
+  critical: false
+  hidden: false
+  selected: false
+  expanded: true
+  packages:
+   - google-chrome
+   - browseros-bin
+   - brave-bin
+   - microsoft-edge-stable-bin
+   - torguard
+   - librewolf
+   - browseros-bin
+- name: "VirtualBox"
+  description: "Installs VirtualBox"
+  critical: false
+  hidden: true
+  selected: false
+  expanded: true
+  packages:
+    - virtualbox
+    - virtualbox-host-dkms
+    - virtualbox-guest-utils
+- name: "AI software (more to come)"
+  description: "AI soft that runs on your system not online"
+  critical: false
+  hidden: false
+  selected: false
+  expanded: true
+  packages:
+    - lmstudio
+- name: "Video and Graphics Editors"
+  description: "Video and Graphics Editors"
+  critical: false
+  hidden: false
+  selected: false
+  expanded: true
+  packages:
+    - gimp
+    - kdenlive
+    - kdenlive-appimage
+- name: "Acreetoin Loaded Software"
+  description: "Cinnamon Config files"
+  critical: false
+  hidden: true
+  selected: true
+  expanded: false
+  packages:
+    - fastfetch
+    - nano
+    - webapp-manager
+    - celluloid
+    - loupe
+    - xarchiver
+    - timeshift
+    - timeshift-systemd-timer
+    - unzip
+    - gedit
+    - gnome-disk-utility
+    - seahorse
+    - yay
+    - gnome-calculator
+    - gnome-system-monitor
+    - wireguard-tools
+    - bluez
+    - bluez-utils
+    - blueman
+    - cups
+    - cups-pdf
+    - ghostscript
+    - gsfonts
+    - hplip
+    - gst-plugins-good
+    - gst-plugins-bad
+    - gst-plugins-ugly
+    - gst-libav
+    - downgrade
+    - mint-themes
+    - mint-x-icons
+    - mint-y-icons
+    - gnome-screenshot
+    - firefox
+    - xxglib2
+    - downgrade-desktop
+    - cinnamon-styles-fix
+    - acreetionos-welcome

@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+import sys
+import os
+import subprocess
+import threading
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, GLib, GdkPixbuf
+
+class HorizonAppDrawer(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Horizon Applications & Hub")
+        self.set_default_size(860, 600)
+        self.set_position(Gtk.WindowPosition.CENTER)
+
+        # Header bar
+        header = Gtk.HeaderBar()
+        header.set_show_close_button(True)
+        header.props.title = "AcreetionOS Horizon App Hub"
+        header.props.subtitle = "Manage & Launch Containerized and Native Applications"
+        self.set_titlebar(header)
+
+        # Main box
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        vbox.set_margin_start(18)
+        vbox.set_margin_end(18)
+        vbox.set_margin_top(18)
+        vbox.set_margin_bottom(18)
+        self.add(vbox)
+
+        # Search Bar
+        search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_placeholder_text("Search application drawer, container apps, or repositories...")
+        self.search_entry.connect("search-changed", self.on_search_changed)
+        search_box.pack_start(self.search_entry, True, True, 0)
+        vbox.pack_start(search_box, False, False, 0)
+
+        # Stack switcher and notebook
+        stack = Gtk.Stack()
+        stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        stack.set_transition_duration(200)
+
+        stack_switcher = Gtk.StackSwitcher()
+        stack_switcher.set_stack(stack)
+        header.set_custom_title(stack_switcher)
+
+        # Page 1: Installed & Container Apps (App Drawer)
+        self.apps_flowbox = Gtk.FlowBox()
+        self.apps_flowbox.set_valign(Gtk.Align.START)
+        self.apps_flowbox.set_max_children_per_line(4)
+        self.apps_flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
+
+        scrolled_apps = Gtk.ScrolledWindow()
+        scrolled_apps.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled_apps.add(self.apps_flowbox)
+        stack.add_titled(scrolled_apps, "drawer", "App Drawer")
+
+        # Page 2: Install Apps (Container & Flatpak GUI)
+        installer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        installer_lbl = Gtk.Label()
+        installer_lbl.set_markup("<b>Install New Software to Arch Container</b>\nSearch packages to add to your user application container (Distrobox):")
+        installer_lbl.set_alignment(0.0, 0.5)
+        installer_box.pack_start(installer_lbl, False, False, 0)
+
+        pkg_search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.pkg_input = Gtk.Entry()
+        self.pkg_input.set_placeholder_text("Enter package name (e.g. libreoffice, gimp, steam, vlc)...")
+        pkg_btn = Gtk.Button(label="Search & Install")
+        pkg_btn.connect("clicked", self.on_install_clicked)
+        pkg_search_box.pack_start(self.pkg_input, True, True, 0)
+        pkg_search_box.pack_start(pkg_btn, False, False, 0)
+        installer_box.pack_start(pkg_search_box, False, False, 0)
+
+        self.status_label = Gtk.Label(label="Ready.")
+        self.status_label.set_alignment(0.0, 0.5)
+        installer_box.pack_start(self.status_label, False, False, 0)
+
+        self.console_view = Gtk.TextView()
+        self.console_view.set_editable(False)
+        self.console_view.set_monospace(True)
+        scrolled_console = Gtk.ScrolledWindow()
+        scrolled_console.add(self.console_view)
+        installer_box.pack_start(scrolled_console, True, True, 0)
+
+        stack.add_titled(installer_box, "installer", "Get Applications")
+
+        # Page 3: System Snapshots (Timeshift)
+        snapshots_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        snap_lbl = Gtk.Label()
+        snap_lbl.set_markup("<b>Timeshift & Data Protection</b>\nAcreetionOS protects the system and user layers with automated ext4 snapshots.")
+        snap_lbl.set_alignment(0.0, 0.5)
+        snapshots_box.pack_start(snap_lbl, False, False, 0)
+
+        snap_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        btn_open_timeshift = Gtk.Button(label="Open Timeshift (GUI)")
+        btn_open_timeshift.connect("clicked", lambda _: subprocess.Popen(["timeshift-launcher"]))
+        
+        btn_create_snap = Gtk.Button(label="Create Snapshot Now")
+        btn_create_snap.connect("clicked", self.on_create_snapshot)
+        
+        snap_btn_box.pack_start(btn_open_timeshift, False, False, 0)
+        snap_btn_box.pack_start(btn_create_snap, False, False, 0)
+        snapshots_box.pack_start(snap_btn_box, False, False, 0)
+
+        self.snap_status = Gtk.Label(label="Snapshots are scheduled automatically on boot and daily.")
+        self.snap_status.set_alignment(0.0, 0.5)
+        snapshots_box.pack_start(self.snap_status, False, False, 0)
+
+        stack.add_titled(snapshots_box, "snapshots", "System Snapshots")
+
+        vbox.pack_start(stack, True, True, 0)
+
+        self.load_applications()
+
+    def load_applications(self):
+        # Clear existing
+        for child in self.apps_flowbox.get_children():
+            self.apps_flowbox.remove(child)
+
+        # Standard desktop entries and exported Distrobox application directories
+        desktop_dirs = [
+            "/usr/share/applications",
+            os.path.expanduser("~/.local/share/applications"),
+            os.path.expanduser("~/.local/share/applications/distrobox"),
+        ]
+        
+        apps = []
+        seen_cmds = set()
+        for d in desktop_dirs:
+            if not os.path.isdir(d):
+                continue
+            for root, _, files in os.walk(d):
+                for f in files:
+                    if f.endswith(".desktop"):
+                        path = os.path.join(root, f)
+                        name = None
+                        icon = "application-x-executable"
+                        exec_cmd = None
+                        is_distrobox = "distrobox" in path or "distrobox" in f
+                        try:
+                            with open(path, "r", encoding="utf-8", errors="ignore") as fp:
+                                for line in fp:
+                                    if line.startswith("Name=") and not name:
+                                        name = line.strip().split("=", 1)[1]
+                                    elif line.startswith("Icon="):
+                                        icon = line.strip().split("=", 1)[1]
+                                    elif line.startswith("Exec=") and not exec_cmd:
+                                        exec_cmd = line.strip().split("=", 1)[1].split("%")[0].strip()
+                                    elif line.startswith("NoDisplay=true"):
+                                        name = None
+                                        break
+                                    elif "distrobox-enter" in line or "distrobox enter" in line:
+                                        is_distrobox = True
+                        except Exception:
+                            continue
+                        if name and exec_cmd and exec_cmd not in seen_cmds:
+                            seen_cmds.add(exec_cmd)
+                            badge = " [Arch App]" if is_distrobox else ""
+                            apps.append((f"{name}{badge}", icon, exec_cmd, is_distrobox))
+
+        # Always ensure primary Arch Linux Distrobox container app launcher is prominently displayed
+        apps.append(("Arch Apps Container", "utilities-terminal", "horizon-apps", True))
+
+        apps.sort(key=lambda x: (not x[3], x[0].lower()))
+        self.all_apps = apps
+        self.render_apps(apps)
+
+    def render_apps(self, app_list):
+        for child in self.apps_flowbox.get_children():
+            self.apps_flowbox.remove(child)
+
+        for name, icon, cmd, is_distrobox in app_list:
+            btn = Gtk.Button()
+            btn.set_size_request(180, 100)
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            box.set_halign(Gtk.Align.CENTER)
+            box.set_valign(Gtk.Align.CENTER)
+
+            img = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.DIALOG)
+            box.pack_start(img, False, False, 0)
+
+            lbl = Gtk.Label(label=name)
+            lbl.set_ellipsize(3) # PANGO_ELLIPSIZE_END
+            lbl.set_max_width_chars(18)
+            box.pack_start(lbl, False, False, 0)
+
+            btn.add(box)
+            # Directly launch application (either native host or Distrobox containerized)
+            btn.connect("clicked", lambda _, c=cmd: subprocess.Popen(c, shell=True))
+            self.apps_flowbox.add(btn)
+        
+        self.apps_flowbox.show_all()
+
+    def on_search_changed(self, entry):
+        q = entry.get_text().lower()
+        filtered = [app for app in self.all_apps if q in app[0].lower()]
+        self.render_apps(filtered)
+
+    def on_install_clicked(self, _):
+        pkg = self.pkg_input.get_text().strip()
+        if not pkg:
+            return
+        self.status_label.set_text(f"Installing '{pkg}' into Arch container...")
+        self.append_console(f"Running: distrobox enter arch-apps -- sudo pacman -S --noconfirm {pkg}\n")
+        
+        def run_thread():
+            cmd = f"horizon-apps sudo pacman -S --noconfirm {pkg} && distrobox-export --app {pkg}"
+            proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            for line in proc.stdout:
+                GLib.idle_add(self.append_console, line)
+            proc.wait()
+            if proc.returncode == 0:
+                GLib.idle_add(self.status_label.set_text, f"Successfully installed and exported '{pkg}'!")
+                GLib.idle_add(self.load_applications)
+            else:
+                GLib.idle_add(self.status_label.set_text, f"Installation of '{pkg}' failed.")
+
+        threading.Thread(target=run_thread, daemon=True).start()
+
+    def on_create_snapshot(self, _):
+        self.snap_status.set_text("Creating on-demand snapshot via Timeshift (rsync)...")
+        def run_snap():
+            cmd = "sudo timeshift --create --comments 'User on-demand backup'"
+            proc = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if proc.returncode == 0:
+                GLib.idle_add(self.snap_status.set_text, "Snapshot created successfully.")
+            else:
+                GLib.idle_add(self.snap_status.set_text, f"Snapshot failed: {proc.stderr[:100]}")
+        threading.Thread(target=run_snap, daemon=True).start()
+
+    def append_console(self, text):
+        buf = self.console_view.get_buffer()
+        buf.insert(buf.get_end_iter(), text)
+
+def main():
+    app = HorizonAppDrawer()
+    app.connect("destroy", Gtk.main_quit)
+    app.show_all()
+    Gtk.main()
+
+if __name__ == "__main__":
+    main()

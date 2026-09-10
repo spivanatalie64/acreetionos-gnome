@@ -1,0 +1,235 @@
+/*
+ * SPDX-FileCopyrightText: no
+ * SPDX-License-Identifier: CC0-1.0
+ */
+
+/*
+A branding component can ship a stylesheet (like this one)
+which is applied to parts of the Calamares user-interface.
+In principle, all parts can be styled through CSS.
+Missing parts should be filed as issues.
+
+The IDs are based on the object names in the C++ code.
+You can use the Debug Dialog to find out object names:
+  - Open the debug dialog
+  - Choose tab *Tools*
+  - Click *Widget Tree* button
+The list of object names is printed in the log.
+
+Documentation for styling Qt Widgets through a stylesheet
+can be found at
+    https://doc.qt.io/qt-5/stylesheet-examples.html
+    https://doc.qt.io/qt-5/stylesheet-reference.html
+In Calamares, styling widget classes is supported (e.g.
+using `QComboBox` as a selector).
+
+This example stylesheet has all the actual styling commented out.
+The examples are not exhaustive.
+
+Use gammaray
+
+*/
+
+/*** Generic Widgets.
+ *
+ * You can style **all** widgets of a given class by selecting
+ * the class name. Some widgets have specialized sub-selectors.
+ */
+
+/*
+QPushButton { background-color: green; }
+*/
+
+/*** Main application window.
+ *
+ * The main application window has the sidebar, which in turn
+ * contains a logo and a list of items -- note that the list
+ * can **not** be styled, since it has its own custom C++
+ * delegate code.
+ */
+
+/*
+#mainApp { }
+#sidebarApp { }
+#logoApp { }
+*/
+
+/*** Welcome module.
+ *
+ * There are plenty of parts, but the buttons are the most interesting
+ * ones (donate, release notes, ...). The little icon image can be
+ * styled through *qproperty-icon*, which is a little obscure.
+ * URLs can reference the QRC paths of the Calamares application
+ * or loaded via plugins or within the filesystem. There is no
+ * comprehensive list of available icons, though.
+ */
+
+/*
+QPushButton#aboutButton { qproperty-icon: url(:/data/images/release.svg); }
+#donateButton,
+#supportButton,
+#releaseNotesButton,
+#knownIssuesButton { qproperty-icon: url(:/data/images/help.svg); }
+*/
+
+/*** Partitioning module.
+ *
+ * Many moving parts, which you will need to experiment with.
+ */
+
+/*
+#bootInfoIcon { }
+#bootInfoLable { }
+#deviceInfoIcon { }
+#defineInfoLabel { }
+#scrollAreaWidgetContents { }
+#partitionBarView { }
+*/
+
+/*** Licensing module.
+ *
+ * The licensing module paints individual widgets for each of
+ * the licenses. The item can be collapsed or expanded.
+ */
+
+/*
+#licenseItem {  }
+#licenseItemFullText {  }
+*/
+
+/* Existing styles might be here */
+
+/* Package/Module Selection Styles */
+QTreeView {
+    font-size: 14pt;
+    color: #FFFFFF;         /* Text color */
+    padding: 5px;
+    margin: 2px;
+}
+
+QListView {
+    font-size: 14pt;
+    color: #FFFFFF;         /* Text color */
+    padding: 5px;
+    margin: 2px;
+}
+
+QComboBox {
+    font-size: 14pt;
+    color: #FFFFFF;         /* Text color */
+    padding: 5px;
+    margin: 2px;
+}
+
+/* If you want to specifically target the package selection module */
+#packagechooserq {
+    font-size: 14pt;
+}
+/* User account creation page */
+#textBoxUserName, #textBoxHostName, #textBoxUserPassword, #textBoxRootPassword, #textBoxVerify {
+    font-size: 14pt;
+}
+
+/* Labels for the input fields */
+#labelUsername, #labelHostname, #labelUserPassword, #labelUserVerify, #labelRootPassword, #labelRootVerify {
+    font-size: 14pt;
+}
+
+/* All input fields generally */
+QLineEdit {
+    font-size: 14pt;
+    padding: 5px;
+}
+
+/* All labels generally */
+QLabel {
+    font-size: 14pt;
+}
+
+/* Specific to the users page */
+#usersPage QWidget {
+    font-size: 14pt;
+}
+/* Partition page elements */
+#partitionBarView {
+    font-size: 14pt;
+}
+
+#partitionLabels QLabel {
+    font-size: 14pt;
+}
+
+/* Mount point selector and fields */
+#mountPointComboBox {
+    font-size: 14pt;
+}
+
+/* Partition table */
+#partitionTable {
+    font-size: 14pt;
+}
+
+/* Device selection dropdown */
+#deviceComboBox {
+    font-size: 14pt;
+}
+
+/* All partition related buttons and controls */
+#partitionPage QWidget {
+    font-size: 14pt;
+}
+
+/* Specific mount point entries */
+#partitionMountPoint {
+    font-size: 14pt;
+}
+
+/* File system type selector */
+#fileSystemComboBox {
+    font-size: 14pt;
+}
+
+/* Save this as style.qss in /etc/calamares/branding/yourbrand/ */
+
+QCheckBox {
+    spacing: 5px;
+    color: #ffffff;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ffffff;  /* White border */
+    border-radius: 3px;
+    background-color: #000000;  /* White background */
+}
+
+QCheckBox::indicator:unchecked {
+    background-color: #000000;
+}
+
+QCheckBox::indicator:unchecked:hover {
+    background-color: #f0f0f0;  /* Slightly darker on hover */
+    border-color: #f0f0f0;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #ffffff;
+    border-color: #ffffff;
+    image: url(check-black.svg);
+}
+
+QCheckBox::indicator:checked:hover {
+    background-color: #f0f0f0;
+    border-color: #f0f0f0;
+}
+
+QCheckBox::indicator:disabled {
+    border-color: #000000;
+    background-color: #000000;
+}
+
+/* Optional: Style for focused checkboxes */
+QCheckBox::indicator:focus {
+    border-color: #f0f0f0;
+}

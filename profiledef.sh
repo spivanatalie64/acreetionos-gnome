@@ -32,8 +32,12 @@ file_permissions=(
   ["/usr/bin/dd.sh"]="0:0:755"
   ["/usr/local/bin/postinstall.sh"]="0:0:755"
   ["/usr/bin/calamares.sh"]="0:0:755"
-  ["/usr/local/bin/preinstall"]="0:0:755"
   ["/usr/local/bin/stormos-final"]="0:0:755"
   ["/usr/bin/wifi-connection"]="0:0:755"
   ["/usr/local/bin/setup-displays.sh"]="0:0:755"
+  ["/usr/local/bin/freeman"]="0:0:755"
+  ["/usr/local/bin/horizon-firstboot.sh"]="0:0:755"
+  ["/usr/local/bin/horizon-image-update"]="0:0:755"
+  ["/usr/local/bin/horizon-apps"]="0:0:755"
+  ["/usr/local/bin/horizon-app-drawer"]="0:0:755"
 )

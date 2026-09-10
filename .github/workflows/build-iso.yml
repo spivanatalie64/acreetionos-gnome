@@ -1,0 +1,92 @@
+name: AcreetionOS Horizon ISO Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feature/horizon-xlibre
+
+jobs:
+  build-iso:
+    name: Build AcreetionOS Horizon ISO
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+      options: --privileged
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize Arch keyring and package mirrors
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          pacman -Syu --noconfirm --needed archlinux-keyring
+
+      - name: Install build tools and build dependencies
+        run: |
+          pacman -S --noconfirm --needed \
+            archiso \
+            squashfs-tools \
+            dosfstools \
+            erofs-utils \
+            mtools \
+            xorriso \
+            libarchive \
+            grub \
+            edk2-shell \
+            git \
+            meson \
+            ninja \
+            rust \
+            cargo \
+            glib2 \
+            gobject-introspection \
+            wayland-protocols \
+            wayland \
+            libinput \
+            libdrm \
+            libxkbcommon \
+            gnome-desktop \
+            gnome-desktop-4 \
+            python-docutils \
+            itstool \
+            yelp-tools \
+            gjs \
+            gnome-autoar \
+            libibus \
+            libgweather-4 \
+            evolution-data-server \
+            xmlto
+
+      - name: Build patched GNOME 48 / XLibre packages
+        run: |
+          chmod +x build-horizon-xlibre.sh xlibre-patches/build-patched-packages.sh build-freeman.sh
+          # Build packages into local repository
+          ./xlibre-patches/build-patched-packages.sh
+
+      - name: Build Freeman utility
+        run: |
+          ./build-freeman.sh
+
+      - name: Construct Horizon ISO image
+        run: |
+          chmod +x build.sh refresh.sh mkarchiso.sh
+          HORIZON_SKIP_PATCHED_PACKAGES=1 HORIZON_REBUILD_FREEMAN=0 ./build.sh
+          ls -lh ../ISO/ || ls -lh out/
+
+      - name: Compute SHA-256 Checksums
+        run: |
+          mkdir -p final-artifacts
+          cp -f ../ISO/*.iso out/*.iso final-artifacts/ 2>/dev/null || true
+          cd final-artifacts
+          sha256sum *.iso > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload ISO Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AcreetionOS-Horizon-ISO
+          path: final-artifacts/
+          retention-days: 14

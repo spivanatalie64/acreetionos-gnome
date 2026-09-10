@@ -87,11 +87,13 @@ sof-firmware
 ################################################################################
 # DISPLAY SERVER & GRAPHICS
 ################################################################################
-xorg-server
-xorg-server-common
+xlibre-xserver
+xlibre-xserver-common
+xlibre-input-libinput
+xlibre-video-amdgpu
+xlibre-video-intel
+xlibre-video-nouveau
 xorg-xinit
-xfce4
-gnome
 mesa
 mesa-utils
 glu
@@ -101,22 +103,9 @@ opencl-headers
 directx-headers
 
 ################################################################################
-# GRAPHICS DRIVERS
-################################################################################
-xf86-video-amdgpu
-xf86-video-intel
-xf86-video-nouveau
-xf86-input-libinput
-
-################################################################################
-# DISPLAY MANAGER
+# DISPLAY MANAGER & GNOME 48 DESKTOP
 ################################################################################
 gdm
-
-################################################################################
-# GNOME DESKTOP ENVIRONMENT
-################################################################################
-gnome
 gnome-tweaks
 gnome-shell
 gnome-terminal
@@ -152,7 +141,8 @@ kcrash
 # CALAMARES INSTALLER - System installer and dependencies
 ################################################################################
 calamares
-calamares-config
+# calamares-config is bundled directly into airootfs/etc/calamares
+# calamares-config
 kpmcore
 yaml-cpp
 libpwquality
@@ -247,7 +237,10 @@ intel-ucode
 #xarchiver
 
 # Backup tools
-#timeshift
+# Backup & Snapshots
+timeshift
+cronie
+rsync
 
 # Package managers
 #yay-bin
@@ -275,6 +268,12 @@ samba
 
 # System info
 fastfetch
+
+# Container and Application Subsystems
+distrobox
+podman
+fuse-overlayfs
+slirp4netns
 
 # Development tools (uncomment if needed for building packages)
 base-devel

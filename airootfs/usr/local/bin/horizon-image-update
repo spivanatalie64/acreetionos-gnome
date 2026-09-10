@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG=/etc/horizon/update.conf
+[[ -f "$CONFIG" ]] && source "$CONFIG"
+: "${GITLAB_INSTANCE:=https://gitlab.acreetionos.org}"
+: "${GITLAB_PROJECT:=acreetionos-code/acreetionos-gnome}"
+: "${UPDATE_MANIFEST_URL:=}"
+: "${UPDATE_CHANNEL:=stable}"
+
+if [[ -w /var/lib ]]; then
+    DEFAULT_STATE_DIR="/var/lib/horizon-image-update"
+else
+    DEFAULT_STATE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/horizon-image-update"
+fi
+: "${UPDATE_STATE_DIR:=$DEFAULT_STATE_DIR}"
+: "${UPDATE_TARGET:=}"
+: "${UPDATE_PUBLIC_KEY:=}"
+
+manifest="$UPDATE_STATE_DIR/manifest.json"
+staged="$UPDATE_STATE_DIR/staged"
+mkdir -p "$UPDATE_STATE_DIR" "$staged"
+
+# Download release manifest from GitLab releases API or custom manifest url
+download_manifest() {
+    if [[ -n "$UPDATE_MANIFEST_URL" ]]; then
+        curl --fail --location --silent --show-error --retry 3 "$UPDATE_MANIFEST_URL" -o "$manifest"
+    else
+        local enc_project="${GITLAB_PROJECT//\//%2F}"
+        local api_url="${GITLAB_INSTANCE}/api/v4/projects/${enc_project}/releases"
+        local raw_json="$UPDATE_STATE_DIR/gitlab_releases.json"
+        if ! curl --fail --location --silent --retry 2 "$api_url" -o "$raw_json" 2>/dev/null; then
+            printf 'Note: No upstream GitLab release found on %s for %s (or network offline).\n' "$GITLAB_INSTANCE" "$GITLAB_PROJECT"
+            printf 'Creating offline placeholder manifest.\n'
+            cat > "$manifest" <<'EOF'
+{
+  "version": "1.0.0-horizon",
+  "channel": "stable",
+  "image": "",
+  "checksum_url": "",
+  "notes": "Current system is on the base image."
+}
+EOF
+            return 0
+        fi
+        
+        # Transform GitLab release metadata into standard update format
+        python3 - "$raw_json" "$manifest" <<'PY'
+import json, sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    releases = json.load(f)
+
+if not isinstance(releases, list) or len(releases) == 0:
+    out_data = {
+        "version": "1.0.0-horizon",
+        "channel": "stable",
+        "image": "",
+        "checksum_url": "",
+        "notes": "No release available"
+    }
+else:
+    rel = releases[0]
+    tag = rel.get("tag_name", "unknown")
+    assets = rel.get("assets", {}).get("links", [])
+
+    img_url = ""
+    sha_url = ""
+
+    for a in assets:
+        name = a.get("name", "")
+        url = a.get("direct_asset_url", a.get("url", ""))
+        if name.endswith(".img.zst") or name.endswith(".raw.zst") or name.endswith(".iso"):
+            img_url = url
+        elif name.endswith("SHA256SUMS") or name.endswith(".sha256"):
+            sha_url = url
+
+    out_data = {
+        "version": tag,
+        "channel": "stable",
+        "image": img_url,
+        "checksum_url": sha_url,
+        "notes": rel.get("description", "")
+    }
+
+with open(sys.argv[2], "w", encoding="utf-8") as out:
+    json.dump(out_data, out, indent=2)
+PY
+    fi
+}
+
+manifest_value() {
+    local key="$1"
+    python3 - "$manifest" "$key" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    data = json.load(stream)
+value = data.get(sys.argv[2], "")
+if not isinstance(value, str):
+    raise SystemExit("manifest value is not a string")
+print(value)
+PY
+}
+
+check() {
+    download_manifest
+    printf 'channel=%s\n' "$(manifest_value channel)"
+    printf 'version=%s\n' "$(manifest_value version)"
+    printf 'image=%s\n' "$(manifest_value image)"
+}
+
+stage() {
+    local image checksum_url image_path sha_file expected_sha
+    download_manifest
+    image="$(manifest_value image)"
+    checksum_url="$(manifest_value checksum_url)"
+    [[ -n "$image" ]] || {
+        printf '%s\n' 'error: release manifest does not contain an image asset' >&2
+        return 1
+    }
+    
+    image_path="$staged/$(basename "$image")"
+    printf 'Downloading image: %s\n' "$image"
+    curl --fail --location --progress-bar --retry 3 "$image" -o "$image_path.tmp"
+    
+    if [[ -n "$checksum_url" ]]; then
+        sha_file="$staged/SHA256SUMS"
+        curl --fail --location --silent --show-error --retry 3 "$checksum_url" -o "$sha_file"
+        filename="$(basename "$image")"
+        expected_sha="$(grep "$filename" "$sha_file" | awk '{print $1}' || true)"
+        if [[ -n "$expected_sha" ]]; then
+            printf 'Verifying SHA-256...\n'
+            printf '%s  %s\n' "$expected_sha" "$image_path.tmp" | sha256sum --check --status
+            printf 'SHA-256 verification passed!\n'
+        else
+            printf 'Warning: Checksum file found but missing hash for %s\n' "$filename"
+        fi
+    fi
+    
+    mv -f "$image_path.tmp" "$image_path"
+    printf '%s\n' "$image_path" > "$staged/current"
+    chmod 600 "$image_path"
+    printf 'staged=%s\n' "$image_path"
+}
+
+apply_image() {
+    local image target
+    [[ -f "$staged/current" ]] || { printf '%s\n' 'no staged image' >&2; return 1; }
+    target="$UPDATE_TARGET"
+    [[ -n "$target" && -b "$target" ]] || {
+        printf '%s\n' 'refusing image activation: UPDATE_TARGET is not configured or not a block device' >&2
+        return 1
+    }
+    image="$(<"$staged/current")"
+    printf 'Writing %s to %s (Android/SteamOS style A/B update)\n' "$image" "$target"
+    if [[ "$image" == *.zst ]]; then
+        zstd -dc "$image" | dd of="$target" bs=16M conv=fsync status=progress
+    else
+        dd if="$image" of="$target" bs=16M conv=fsync status=progress
+    fi
+    sync
+    printf '%s\n' 'Image successfully written! Flip your bootloader slot to complete update.'
+}
+
+case "${1:-status}" in
+    check) check ;;
+    stage) stage ;;
+    apply) apply_image ;;
+    status)
+        if [[ -f "$staged/current" ]]; then
+            printf 'staged=%s\n' "$(<"$staged/current")"
+        else
+            printf '%s\n' 'staged=none'
+        fi
+        ;;
+    *) printf 'usage: %s {check|stage|apply|status}\n' "$0" >&2; exit 2 ;;
+esac
+

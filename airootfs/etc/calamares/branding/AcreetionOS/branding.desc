@@ -1,0 +1,43 @@
+---
+componentName:  AcreetionOS
+
+welcomeStyleCalamares:   false
+
+welcomeExpandingLogo:   true
+
+windowExpanding:    fullscreen
+windowSize: 1280px,720px
+windowPlacement: center
+
+sidebar: qml,top
+
+strings:
+    productName:         AcreetionOS Horizon
+    shortProductName:    AcreetionOS
+    version:             Horizon 1.0 (X11)
+    shortVersion:        1.0
+    versionedName:       AcreetionOS Horizon 1.0
+    shortVersionedName:  AcreetionOS Horizon
+    bootloaderEntryName: AcreetionOS Horizon
+    productUrl:          https://acreetionos.org
+    supportUrl:          https://acreetionos.org
+    bugReportUrl:        https://gitlab.acreetionos.org/acreetionos-code/acreetionos-gnome/issues
+
+images:
+    productLogo:         "logo.png"
+    productIcon:         "logo.png"
+    productWelcome:      "logo.png"
+
+uploadServer :
+    type :    "fiche"
+    url :     "http://termbin.com:9999"
+    sizeLimit : -1
+
+slideshow:               "show.qml"
+
+slideshowAPI: 1
+
+style:
+   SidebarBackground:    "#31313a"
+   SidebarText:          "#FFFFFF"
+   SidebarBackgroundCurrent: "#ebe0c9"
