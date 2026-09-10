@@ -86,6 +86,16 @@ for entry in "${entries[@]}"; do
         export LD_LIBRARY_PATH="$stage_path/usr/lib:$stage_path/usr/lib/mutter-16:${LD_LIBRARY_PATH:-}"
     fi
 
+    # Merge this package's staged headers into a shared staging include tree
+    # so later builds (e.g. gnome-shell needing mutter's meta/* headers) resolve includes.
+    mkdir -p "$build_dir/stage_usr/include"
+    if [[ -d "$stage_path/usr/include" ]]; then
+        cp -a "$stage_path/usr/include/." "$build_dir/stage_usr/include/"
+        export CFLAGS="${CFLAGS:-} -I$build_dir/stage_usr/include -I$build_dir/stage_usr/include/mutter-16 -I$build_dir/stage_usr/include/mutter-16/clutter -I$build_dir/stage_usr/include/mutter-16/cogl -I$build_dir/stage_usr/include/mutter-16/mtk"
+        export CXXFLAGS="${CXXFLAGS:-} -I$build_dir/stage_usr/include -I$build_dir/stage_usr/include/mutter-16"
+        export CPPFLAGS="${CPPFLAGS:-} -I$build_dir/stage_usr/include -I$build_dir/stage_usr/include/mutter-16"
+    fi
+
     cat > "$package_path/PKGBUILD" <<EOF
 pkgname=$package
 pkgver=${ref#v}
@@ -101,11 +111,12 @@ EOF
     (
         export MAKEFLAGS="-j$(nproc)"
         export CFLAGS CPPFLAGS
+        export PKG_CONFIG_PATH LD_LIBRARY_PATH
         cd "$package_path"
         if [[ "$(id -u)" -eq 0 ]]; then
             id -u builduser >/dev/null 2>&1 || useradd -m -s /bin/bash builduser
             chown -R builduser "$build_dir"
-            HORIZON_STAGE="$stage_path" su builduser -c "makepkg --noconfirm --nodeps --clean"
+            HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" su -s /bin/bash builduser -c "cd $package_path && makepkg --noconfirm --nodeps --clean"
         else
             HORIZON_STAGE="$stage_path" makepkg --noconfirm --nodeps --clean
         fi
