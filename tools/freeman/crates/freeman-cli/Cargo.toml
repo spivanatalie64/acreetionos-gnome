@@ -1,0 +1,15 @@
+[package]
+name = "freeman-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pamac"
+path = "src/main.rs"
+
+[dependencies]
+freeman-config = { path = "../freeman-config" }
+freeman-core = { path = "../freeman-core" }
+freeman-db = { path = "../freeman-db" }
+freeman-aur = { path = "../freeman-aur" }

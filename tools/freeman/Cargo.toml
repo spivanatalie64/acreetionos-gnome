@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/freeman-config",
+    "crates/freeman-core",
+    "crates/freeman-db",
+    "crates/freeman-aur",
+    "crates/freeman-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
