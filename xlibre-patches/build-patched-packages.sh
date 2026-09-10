@@ -45,7 +45,7 @@ for entry in "${entries[@]}"; do
     find "$build_dir/stage"/*/usr/lib/pkgconfig "$build_dir/stage"/*/usr/share/pkgconfig -type f 2>/dev/null -exec cp -f {} "$build_dir/stage_pkgconfig/" \; || true
 
     # Provide include headers from previous build stages (e.g. mutter-16 for gnome-shell)
-    local cflags=""
+    cflags=""
     for incdir in "$build_dir/stage"/*/usr/include "$build_dir/stage"/*/usr/include/*; do
         if [[ -d "$incdir" ]]; then
             cflags+=" -I$incdir"
