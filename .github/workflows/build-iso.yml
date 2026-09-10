@@ -87,6 +87,17 @@ jobs:
             libibus \
             libgweather-4 \
             evolution-data-server \
+            accountsservice \
+            json-glib \
+            keyutils \
+            pam \
+            upower \
+            libgdm \
+            libsecret \
+            libsoup3 \
+            libadwaita \
+            gcr-4 \
+            unzip \
             python-argcomplete \
             bash-completion \
             libxcvt \
