@@ -42,6 +42,7 @@ jobs:
             rust \
             cargo \
             glib2 \
+            glib2-devel \
             gobject-introspection \
             wayland-protocols \
             wayland \

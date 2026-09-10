@@ -4,5 +4,5 @@ default-size-columns=132
 default-size-rows=43
 font='Monospace 14'
 foreground-color='rgb(208,207,204)'
-use-system-font=false
-use-theme-colors=false
+use-system-font=true
+use-theme-colors=true
