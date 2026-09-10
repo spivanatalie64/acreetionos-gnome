@@ -46,13 +46,14 @@ for entry in "${entries[@]}"; do
 
     # Provide include headers from previous build stages (e.g. mutter-16 for gnome-shell)
     cflags=""
-    for incdir in "$build_dir/stage"/*/usr/include "$build_dir/stage"/*/usr/include/*; do
+    for incdir in "$build_dir/stage"/*/usr/include "$build_dir/stage"/*/usr/include/*/clutter "$build_dir/stage"/*/usr/include/*/cogl "$build_dir/stage"/*/usr/include/*/mtk; do
         if [[ -d "$incdir" ]]; then
             cflags+=" -I$incdir"
         fi
     done
     export CFLAGS="${CFLAGS:-} $cflags"
     export CXXFLAGS="${CXXFLAGS:-} $cflags"
+    export CPPFLAGS="${CPPFLAGS:-} $cflags"
 
     meson setup "$build_path" "$source_path" --prefix=/usr --buildtype=release $meson_options
     meson compile -C "$build_path"
@@ -75,6 +76,16 @@ for entry in "${entries[@]}"; do
     # Do not package etc/gdm/custom.conf inside gdm package so airootfs overlay can provide it without conflict
     rm -f "$stage_path/etc/gdm/custom.conf"
 
+    # Also stage libraries and pkgconfig for later components to link against
+    if [[ -d "$stage_path/usr/lib" ]]; then
+        ln -sfn "$stage_path/usr/lib" "$build_dir/staged-libs-$package"
+    fi
+
+    # Ensure dynamic linker can find staged libraries during meson setup/compile
+    if [[ -d "$stage_path/usr/lib" ]]; then
+        export LD_LIBRARY_PATH="$stage_path/usr/lib:$stage_path/usr/lib/mutter-16:${LD_LIBRARY_PATH:-}"
+    fi
+
     cat > "$package_path/PKGBUILD" <<EOF
 pkgname=$package
 pkgver=${ref#v}
@@ -89,6 +100,7 @@ package() {
 EOF
     (
         export MAKEFLAGS="-j$(nproc)"
+        export CFLAGS CPPFLAGS
         cd "$package_path"
         if [[ "$(id -u)" -eq 0 ]]; then
             id -u builduser >/dev/null 2>&1 || useradd -m -s /bin/bash builduser
