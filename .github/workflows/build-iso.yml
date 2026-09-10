@@ -57,6 +57,16 @@ jobs:
             libsm \
             libxtst \
             libxinerama \
+            libxkbfile \
+            libxcomposite \
+            libxdamage \
+            libxcursor \
+            libxfixes \
+            libxi \
+            libxrandr \
+            libx11 \
+            libxau \
+            libxcb \
             xorg-server-devel \
             graphene \
             colord \
