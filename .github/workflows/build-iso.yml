@@ -89,6 +89,7 @@ jobs:
             evolution-data-server \
             python-argcomplete \
             bash-completion \
+            libxcvt \
             xmlto
 
       - name: Build patched GNOME 48 / XLibre packages
