@@ -86,7 +86,7 @@ for entry in "${entries[@]}"; do
 
     # Merge this package's staged headers into a shared staging include tree
     # so later builds (e.g. gnome-shell needing mutter's meta/* headers) resolve includes.
-    mkdir -p "$build_dir/stage_usr/include" "$build_dir/stage_usr/lib" "$build_dir/stage_gir"
+    mkdir -p "$build_dir/stage_usr/include" "$build_dir/stage_usr/lib/girepository-1.0" "$build_dir/stage_usr/share/gir-1.0" "$build_dir/stage_usr/lib/mutter-16"
     if [[ -d "$stage_path/usr/include" ]]; then
         cp -a "$stage_path/usr/include/." "$build_dir/stage_usr/include/"
         export CFLAGS="${CFLAGS:-} -I$build_dir/stage_usr/include -I$build_dir/stage_usr/include/mutter-16 -I$build_dir/stage_usr/include/mutter-16/clutter -I$build_dir/stage_usr/include/mutter-16/cogl -I$build_dir/stage_usr/include/mutter-16/mtk"
@@ -94,15 +94,13 @@ for entry in "${entries[@]}"; do
         export CPPFLAGS="${CPPFLAGS:-} -I$build_dir/stage_usr/include -I$build_dir/stage_usr/include/mutter-16"
     fi
 
-    # Stage GIR typelibs so downstream g-ir-scanner can resolve dependencies (Clutter-16, Meta-16)
+    # Stage GIR/typelib files so downstream g-ir-scanner can resolve deps (Clutter-16, Meta-16).
+    # Mutter installs .gir/.typelib under $libdir/mutter-16 (per girdir in the .pc file).
+    find "$stage_path" -name '*.gir' -exec cp -f {} "$build_dir/stage_usr/share/gir-1.0/" \; 2>/dev/null || true
+    find "$stage_path" -name '*.typelib' -exec cp -f {} "$build_dir/stage_usr/lib/girepository-1.0/" \; 2>/dev/null || true
     if [[ -d "$stage_path/usr/lib/mutter-16" ]]; then
         cp -a "$stage_path/usr/lib/mutter-16/." "$build_dir/stage_usr/lib/mutter-16/" 2>/dev/null || true
-        find "$stage_path" -name '*.typelib' -exec cp -f {} "$build_dir/stage_usr/lib/girepository-1.0/" \; 2>/dev/null || true
     fi
-    find "$stage_path" -name '*.gir' -exec cp -f {} "$build_dir/stage_usr/share/gir-1.0/" \; 2>/dev/null || true
-    mkdir -p "$build_dir/stage_usr/lib/girepository-1.0" "$build_dir/stage_usr/share/gir-1.0"
-    find "$stage_path" -name '*.typelib' -exec cp -f {} "$build_dir/stage_usr/lib/girepository-1.0/" \; 2>/dev/null || true
-    find "$build_dir/stage" -path '*girepository-1.0*' -name '*.typelib' -exec cp -a --parents {} "$build_dir/stage_usr/" \; 2>/dev/null || true
     export XDG_DATA_DIRS="$build_dir/stage_usr/share:${XDG_DATA_DIRS:-}"
 
     cat > "$package_path/PKGBUILD" <<EOF
