@@ -80,7 +80,13 @@ EOF
     (
         export MAKEFLAGS="-j$(nproc)"
         cd "$package_path"
-        HORIZON_STAGE="$stage_path" makepkg --noconfirm --nodeps --clean
+        if [[ "$(id -u)" -eq 0 ]]; then
+            id -u builduser >/dev/null 2>&1 || useradd -m -s /bin/bash builduser
+            chown -R builduser "$build_dir"
+            HORIZON_STAGE="$stage_path" su builduser -c "makepkg --noconfirm --nodeps --clean"
+        else
+            HORIZON_STAGE="$stage_path" makepkg --noconfirm --nodeps --clean
+        fi
     )
     find "$package_path" -maxdepth 1 -type f -name '*.pkg.tar.*' -exec cp -f {} "$repo_dir/" \;
 done
