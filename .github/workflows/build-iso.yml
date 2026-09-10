@@ -102,6 +102,7 @@ jobs:
             bash-completion \
             libxcvt \
             xtrans \
+            sassc \
             xmlto
 
       - name: Build patched GNOME 48 / XLibre packages
