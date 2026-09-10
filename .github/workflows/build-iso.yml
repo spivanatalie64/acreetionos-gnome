@@ -90,6 +90,7 @@ jobs:
             python-argcomplete \
             bash-completion \
             libxcvt \
+            xtrans \
             xmlto
 
       - name: Build patched GNOME 48 / XLibre packages
