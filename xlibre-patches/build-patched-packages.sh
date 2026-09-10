@@ -79,11 +79,9 @@ for entry in "${entries[@]}"; do
     # Also stage libraries and pkgconfig for later components to link against
     if [[ -d "$stage_path/usr/lib" ]]; then
         ln -sfn "$stage_path/usr/lib" "$build_dir/staged-libs-$package"
-    fi
-
-    # Ensure dynamic linker can find staged libraries during meson setup/compile
-    if [[ -d "$stage_path/usr/lib" ]]; then
+        # Ensure dynamic linker and linker can find staged libraries
         export LD_LIBRARY_PATH="$stage_path/usr/lib:$stage_path/usr/lib/mutter-16:${LD_LIBRARY_PATH:-}"
+        export LDFLAGS="${LDFLAGS:-} -L$stage_path/usr/lib -L$stage_path/usr/lib/mutter-16"
     fi
 
     # Merge this package's staged headers into a shared staging include tree
@@ -110,13 +108,13 @@ package() {
 EOF
     (
         export MAKEFLAGS="-j$(nproc)"
-        export CFLAGS CPPFLAGS
+        export CFLAGS CPPFLAGS LDFLAGS
         export PKG_CONFIG_PATH LD_LIBRARY_PATH
         cd "$package_path"
         if [[ "$(id -u)" -eq 0 ]]; then
             id -u builduser >/dev/null 2>&1 || useradd -m -s /bin/bash builduser
             chown -R builduser "$build_dir"
-            HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" su -s /bin/bash builduser -c "cd $package_path && makepkg --noconfirm --nodeps --clean"
+            HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" su -s /bin/bash builduser -c "cd $package_path && makepkg --noconfirm --nodeps --clean"
         else
             HORIZON_STAGE="$stage_path" makepkg --noconfirm --nodeps --clean
         fi
