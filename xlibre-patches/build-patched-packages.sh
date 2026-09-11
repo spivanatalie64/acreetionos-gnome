@@ -122,8 +122,10 @@ EOF
         cd "$package_path"
         if [[ "$(id -u)" -eq 0 ]]; then
             id -u builduser >/dev/null 2>&1 || useradd -m -s /bin/bash builduser
-            chown -R builduser "$build_dir"
-            HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" su -s /bin/bash builduser -c "cd $package_path && makepkg --noconfirm --nodeps --clean"
+            # Use an ACL instead of chown: grants builduser rwX without changing ownership,
+            # and avoids the /home/natalie 0700 traversal problem via default ACLs.
+            setfacl -R -m u:builduser:rwX "$build_dir" 2>/dev/null || chmod -R a+rwX "$build_dir"
+            HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" setpriv --reuid=builduser --regid=builduser --clear-groups env HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" HOME=/tmp makepkg --noconfirm --nodeps --clean
         else
             HORIZON_STAGE="$stage_path" makepkg --noconfirm --nodeps --clean
         fi
