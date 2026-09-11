@@ -1,17 +1,175 @@
 #!/usr/bin/env python3
 import sys
 import os
+import json
+import shlex
 import subprocess
 import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 import gi
 
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib, GdkPixbuf
 
+# Everything package-related runs *inside* the "arch-apps" Distrobox container
+# via the horizon-apps wrapper (which resolves the container name and execs
+# the given argv there) - never on the host, which has no pacman. Commands are
+# built as a single shell string and handed to "bash -lc" as one argv element,
+# so user-supplied package/search terms go through shlex.quote() rather than
+# host shell interpolation.
+AUR_RPC = "https://aur.archlinux.org/rpc/v5"
+
+
+def container_argv(shell_cmd):
+    return ["horizon-apps", "bash", "-lc", shell_cmd]
+
+
+def run_in_container(shell_cmd, timeout=30):
+    try:
+        return subprocess.run(
+            container_argv(shell_cmd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        class _Timeout:
+            returncode = -1
+            stdout = e.stdout or ""
+            stderr = f"Timed out after {timeout}s"
+        return _Timeout()
+    except FileNotFoundError:
+        class _Missing:
+            returncode = -1
+            stdout = ""
+            stderr = "horizon-apps not found"
+        return _Missing()
+
+
+def aur_rpc(path, params):
+    url = f"{AUR_RPC}/{path}?{urllib.parse.urlencode(params)}"
+    with urllib.request.urlopen(url, timeout=12) as resp:
+        return json.load(resp)
+
+
+def search_official(term):
+    """Search the container's synced pacman repos. Returns a list of dicts."""
+    proc = run_in_container(f"pacman -Ss -- {shlex.quote(term)}", timeout=30)
+    results = []
+    if proc.returncode not in (0, 1):  # 1 = no matches, still fine
+        return results, (proc.stderr or "").strip() or None
+    lines = proc.stdout.splitlines()
+    i = 0
+    while i < len(lines):
+        header = lines[i]
+        if "/" in header and " " in header and not header.startswith(" "):
+            installed = "[installed" in header
+            head = header.split(" [", 1)[0]
+            try:
+                repo_name, version = head.split(" ", 1)
+                repo, name = repo_name.split("/", 1)
+            except ValueError:
+                i += 1
+                continue
+            desc = ""
+            if i + 1 < len(lines) and lines[i + 1].startswith(("    ", "\t")):
+                desc = lines[i + 1].strip()
+                i += 1
+            results.append(
+                {
+                    "name": name,
+                    "version": version,
+                    "repo": repo,
+                    "desc": desc,
+                    "source": "official",
+                    "installed": installed,
+                }
+            )
+        i += 1
+    return results, None
+
+
+def search_aur(term):
+    """Search the AUR via the official read-only RPC. Returns a list of dicts."""
+    try:
+        data = aur_rpc("search/" + urllib.parse.quote(term, safe=""), {"by": "name-desc"})
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
+        return [], str(e)
+    if data.get("type") == "error":
+        return [], data.get("error", "AUR query failed")
+    results = []
+    for r in data.get("results", [])[:80]:
+        results.append(
+            {
+                "name": r.get("Name", ""),
+                "version": r.get("Version", ""),
+                "repo": "aur",
+                "desc": r.get("Description") or "",
+                "source": "aur",
+                "installed": False,
+            }
+        )
+    results.sort(key=lambda r: r["name"].lower())
+    return results, None
+
+
+def dependencies_for(name, source):
+    """Returns (deps: list[str], error: str|None)."""
+    if source == "aur":
+        try:
+            data = aur_rpc("info", {"arg[]": name})
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
+            return [], str(e)
+        hits = data.get("results", [])
+        if not hits:
+            return [], "Package not found on AUR."
+        info = hits[0]
+        deps = list(info.get("Depends", [])) + list(info.get("MakeDepends", []))
+        return deps, None
+    else:
+        proc = run_in_container(f"pacman -Si -- {shlex.quote(name)}", timeout=20)
+        if proc.returncode != 0:
+            return [], (proc.stderr or "Lookup failed").strip()
+        deps = []
+        for line in proc.stdout.splitlines():
+            if line.startswith("Depends On"):
+                val = line.split(":", 1)[1].strip()
+                if val and val != "None":
+                    deps = [d.strip() for d in val.split()]
+                break
+        return deps, None
+
+
+def install_shell_cmd(name, source):
+    quoted = shlex.quote(name)
+    if source == "aur":
+        body = (
+            "set -e; mkdir -p ~/.cache/horizon-aur && cd ~/.cache/horizon-aur && "
+            f"rm -rf {quoted} && "
+            f"git clone --depth=1 https://aur.archlinux.org/{quoted}.git && "
+            f"cd {quoted} && makepkg -si --noconfirm --needed"
+        )
+    else:
+        body = f"sudo pacman -S --noconfirm --needed -- {quoted}"
+    # Exporting a desktop entry is best-effort: plenty of packages (libraries,
+    # CLI tools) have none, and that must never be read as install failure.
+    return f"{body}; export_rc=$?; distrobox-export --app {quoted} >/dev/null 2>&1; exit $export_rc"
+
+
+def remove_shell_cmd(name):
+    quoted = shlex.quote(name)
+    return (
+        f"sudo pacman -R --noconfirm -- {quoted}; rc=$?; "
+        f"distrobox-export --app {quoted} --delete >/dev/null 2>&1; exit $rc"
+    )
+
+
 class HorizonAppDrawer(Gtk.Window):
     def __init__(self):
         super().__init__(title="Horizon Applications & Hub")
-        self.set_default_size(860, 600)
+        self.set_default_size(960, 680)
         self.set_position(Gtk.WindowPosition.CENTER)
 
         # Header bar
@@ -57,49 +215,23 @@ class HorizonAppDrawer(Gtk.Window):
         scrolled_apps.add(self.apps_flowbox)
         stack.add_titled(scrolled_apps, "drawer", "App Drawer")
 
-        # Page 2: Install Apps (Container & Flatpak GUI)
-        installer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        installer_lbl = Gtk.Label()
-        installer_lbl.set_markup("<b>Install New Software to Arch Container</b>\nSearch packages to add to your user application container (Distrobox):")
-        installer_lbl.set_alignment(0.0, 0.5)
-        installer_box.pack_start(installer_lbl, False, False, 0)
-
-        pkg_search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.pkg_input = Gtk.Entry()
-        self.pkg_input.set_placeholder_text("Enter package name (e.g. libreoffice, gimp, steam, vlc)...")
-        pkg_btn = Gtk.Button(label="Search & Install")
-        pkg_btn.connect("clicked", self.on_install_clicked)
-        pkg_search_box.pack_start(self.pkg_input, True, True, 0)
-        pkg_search_box.pack_start(pkg_btn, False, False, 0)
-        installer_box.pack_start(pkg_search_box, False, False, 0)
-
-        self.status_label = Gtk.Label(label="Ready.")
-        self.status_label.set_alignment(0.0, 0.5)
-        installer_box.pack_start(self.status_label, False, False, 0)
-
-        self.console_view = Gtk.TextView()
-        self.console_view.set_editable(False)
-        self.console_view.set_monospace(True)
-        scrolled_console = Gtk.ScrolledWindow()
-        scrolled_console.add(self.console_view)
-        installer_box.pack_start(scrolled_console, True, True, 0)
-
-        stack.add_titled(installer_box, "installer", "Get Applications")
+        # Page 2: Get Applications (search/install/updates, container-scoped)
+        stack.add_titled(self.build_installer_page(), "installer", "Get Applications")
 
         # Page 3: System Snapshots (Timeshift)
         snapshots_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         snap_lbl = Gtk.Label()
-        snap_lbl.set_markup("<b>Timeshift & Data Protection</b>\nAcreetionOS protects the system and user layers with automated ext4 snapshots.")
+        snap_lbl.set_markup("<b>Timeshift &amp; Data Protection</b>\nAcreetionOS protects the system and user layers with automated ext4 snapshots.")
         snap_lbl.set_alignment(0.0, 0.5)
         snapshots_box.pack_start(snap_lbl, False, False, 0)
 
         snap_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         btn_open_timeshift = Gtk.Button(label="Open Timeshift (GUI)")
         btn_open_timeshift.connect("clicked", lambda _: subprocess.Popen(["timeshift-launcher"]))
-        
+
         btn_create_snap = Gtk.Button(label="Create Snapshot Now")
         btn_create_snap.connect("clicked", self.on_create_snapshot)
-        
+
         snap_btn_box.pack_start(btn_open_timeshift, False, False, 0)
         snap_btn_box.pack_start(btn_create_snap, False, False, 0)
         snapshots_box.pack_start(snap_btn_box, False, False, 0)
@@ -114,6 +246,392 @@ class HorizonAppDrawer(Gtk.Window):
 
         self.load_applications()
 
+    # ------------------------------------------------------------------
+    # "Get Applications" page: search (official repos + AUR), dependency
+    # lookups, install/remove, and an installed/updates/activity view -
+    # all scoped to the arch-apps Distrobox container.
+    # ------------------------------------------------------------------
+    def build_installer_page(self):
+        self.selected_result = None  # dict from search_official/search_aur
+        self.selected_installed = None  # package name string
+
+        installer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+
+        installer_lbl = Gtk.Label()
+        installer_lbl.set_markup(
+            "<b>Get Applications</b>\n"
+            "Search official Arch repositories and the AUR. Installs go into your "
+            "Arch container (Distrobox) and are exported to the desktop menu automatically."
+        )
+        installer_lbl.set_alignment(0.0, 0.5)
+        installer_box.pack_start(installer_lbl, False, False, 0)
+
+        inner_notebook = Gtk.Notebook()
+        installer_box.pack_start(inner_notebook, True, True, 0)
+
+        inner_notebook.append_page(self.build_search_tab(), Gtk.Label(label="Search & Install"))
+        inner_notebook.append_page(self.build_installed_tab(), Gtk.Label(label="Installed & Updates"))
+
+        self.status_label = Gtk.Label(label="Ready.")
+        self.status_label.set_alignment(0.0, 0.5)
+        installer_box.pack_start(self.status_label, False, False, 0)
+
+        self.console_view = Gtk.TextView()
+        self.console_view.set_editable(False)
+        self.console_view.set_monospace(True)
+        scrolled_console = Gtk.ScrolledWindow()
+        scrolled_console.set_min_content_height(120)
+        scrolled_console.add(self.console_view)
+        installer_box.pack_start(scrolled_console, False, True, 0)
+
+        return installer_box
+
+    def build_search_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_top(10)
+
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.pkg_search_entry = Gtk.Entry()
+        self.pkg_search_entry.set_placeholder_text("Search packages (official repos + AUR) e.g. libreoffice, gimp, vlc...")
+        self.pkg_search_entry.connect("activate", self.on_search_packages_clicked)
+        search_btn = Gtk.Button(label="Search")
+        search_btn.connect("clicked", self.on_search_packages_clicked)
+        row.pack_start(self.pkg_search_entry, True, True, 0)
+        row.pack_start(search_btn, False, False, 0)
+        box.pack_start(row, False, False, 0)
+
+        self.results_store = Gtk.ListStore(str, str, str, str, str, bool)
+        # columns: name, version, repo, description, source, installed
+        self.results_view = Gtk.TreeView(model=self.results_store)
+        for idx, title in enumerate(["Name", "Version", "Repo", "Description"]):
+            renderer = Gtk.CellRendererText()
+            if title == "Description":
+                renderer.set_property("ellipsize", 3)  # PANGO_ELLIPSIZE_END
+            column = Gtk.TreeViewColumn(title, renderer, text=idx)
+            column.set_resizable(True)
+            if title == "Description":
+                column.set_expand(True)
+            self.results_view.append_column(column)
+        self.results_view.connect("row-activated", self.on_result_row_activated)
+        selection = self.results_view.get_selection()
+        selection.set_mode(Gtk.SelectionMode.SINGLE)
+        selection.connect("changed", self.on_result_selection_changed)
+
+        results_scrolled = Gtk.ScrolledWindow()
+        results_scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        results_scrolled.add(self.results_view)
+        box.pack_start(results_scrolled, True, True, 0)
+
+        action_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.selected_label = Gtk.Label(label="No package selected.")
+        self.selected_label.set_alignment(0.0, 0.5)
+        self.deps_btn = Gtk.Button(label="Show Dependencies")
+        self.deps_btn.set_sensitive(False)
+        self.deps_btn.connect("clicked", self.on_show_dependencies_clicked)
+        self.install_btn = Gtk.Button(label="Install Selected")
+        self.install_btn.set_sensitive(False)
+        self.install_btn.connect("clicked", self.on_install_selected_clicked)
+        action_row.pack_start(self.selected_label, True, True, 0)
+        action_row.pack_start(self.deps_btn, False, False, 0)
+        action_row.pack_start(self.install_btn, False, False, 0)
+        box.pack_start(action_row, False, False, 0)
+
+        self.deps_label = Gtk.Label(label="")
+        self.deps_label.set_alignment(0.0, 0.5)
+        self.deps_label.set_line_wrap(True)
+        box.pack_start(self.deps_label, False, False, 0)
+
+        return box
+
+    def build_installed_tab(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_top(10)
+
+        toolbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        refresh_btn = Gtk.Button(label="Refresh")
+        refresh_btn.connect("clicked", lambda _: self.refresh_installed())
+        check_btn = Gtk.Button(label="Check for Updates")
+        check_btn.connect("clicked", self.on_check_updates_clicked)
+        update_btn = Gtk.Button(label="Update All")
+        update_btn.connect("clicked", self.on_update_all_clicked)
+        self.remove_btn = Gtk.Button(label="Remove Selected")
+        self.remove_btn.set_sensitive(False)
+        self.remove_btn.connect("clicked", self.on_remove_selected_clicked)
+        for b in (refresh_btn, check_btn, update_btn, self.remove_btn):
+            toolbar.pack_start(b, False, False, 0)
+        box.pack_start(toolbar, False, False, 0)
+
+        self.installed_store = Gtk.ListStore(str, str)  # name, version
+        self.installed_view = Gtk.TreeView(model=self.installed_store)
+        for idx, title in enumerate(["Name", "Version"]):
+            renderer = Gtk.CellRendererText()
+            column = Gtk.TreeViewColumn(title, renderer, text=idx)
+            column.set_resizable(True)
+            self.installed_view.append_column(column)
+        selection = self.installed_view.get_selection()
+        selection.set_mode(Gtk.SelectionMode.SINGLE)
+        selection.connect("changed", self.on_installed_selection_changed)
+
+        installed_scrolled = Gtk.ScrolledWindow()
+        installed_scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        installed_scrolled.set_min_content_height(200)
+        installed_scrolled.add(self.installed_view)
+        box.pack_start(installed_scrolled, True, True, 0)
+
+        self.updates_label = Gtk.Label(label="")
+        self.updates_label.set_alignment(0.0, 0.5)
+        self.updates_label.set_line_wrap(True)
+        box.pack_start(self.updates_label, False, False, 0)
+
+        history_expander = Gtk.Expander(label="Recent Activity (install/upgrade/remove history)")
+        history_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        history_box.set_margin_top(6)
+        history_refresh = Gtk.Button(label="Refresh History")
+        history_refresh.connect("clicked", lambda _: self.refresh_history())
+        history_box.pack_start(history_refresh, False, False, 0)
+
+        self.history_view = Gtk.TextView()
+        self.history_view.set_editable(False)
+        self.history_view.set_monospace(True)
+        history_scrolled = Gtk.ScrolledWindow()
+        history_scrolled.set_min_content_height(160)
+        history_scrolled.add(self.history_view)
+        history_box.pack_start(history_scrolled, True, True, 0)
+
+        history_expander.add(history_box)
+        box.pack_start(history_expander, False, True, 0)
+
+        # Lazily load the first time the Installed tab is actually shown.
+        self._installed_loaded = False
+        box.connect("map", self._on_installed_tab_mapped)
+
+        return box
+
+    def _on_installed_tab_mapped(self, *_args):
+        if not self._installed_loaded:
+            self._installed_loaded = True
+            self.refresh_installed()
+            self.refresh_history()
+
+    # -- search / dependencies / install --------------------------------
+
+    def on_search_packages_clicked(self, _):
+        term = self.pkg_search_entry.get_text().strip()
+        if not term:
+            return
+        self.status_label.set_text(f"Searching for '{term}'...")
+        self.results_store.clear()
+        self.deps_label.set_text("")
+
+        def run_search():
+            official, off_err = search_official(term)
+            aur, aur_err = search_aur(term)
+            GLib.idle_add(self._populate_results, official + aur, off_err, aur_err)
+
+        threading.Thread(target=run_search, daemon=True).start()
+
+    def _populate_results(self, results, off_err, aur_err):
+        self.results_store.clear()
+        for r in results:
+            name = r["name"] + ("  [installed]" if r["installed"] else "")
+            self.results_store.append([name, r["version"], r["repo"], r["desc"], r["source"], r["installed"]])
+        note = f"{len(results)} result(s)."
+        problems = [e for e in (off_err, aur_err) if e]
+        if problems:
+            note += " (" + "; ".join(problems) + ")"
+        self.status_label.set_text(note)
+
+    def on_result_selection_changed(self, selection):
+        model, treeiter = selection.get_selected()
+        if treeiter is None:
+            self.selected_result = None
+            self.selected_label.set_text("No package selected.")
+            self.deps_btn.set_sensitive(False)
+            self.install_btn.set_sensitive(False)
+            return
+        row = model[treeiter]
+        name = row[0].split("  [", 1)[0]
+        self.selected_result = {"name": name, "version": row[1], "repo": row[2], "source": row[4]}
+        self.selected_label.set_text(f"Selected: {name} ({row[2]})")
+        self.deps_btn.set_sensitive(True)
+        self.install_btn.set_sensitive(True)
+        self.deps_label.set_text("")
+
+    def on_result_row_activated(self, *_args):
+        if self.selected_result:
+            self.on_install_selected_clicked(None)
+
+    def on_show_dependencies_clicked(self, _):
+        if not self.selected_result:
+            return
+        pkg = self.selected_result
+        self.deps_label.set_text("Looking up dependencies...")
+
+        def run_lookup():
+            deps, err = dependencies_for(pkg["name"], pkg["source"])
+            GLib.idle_add(self._show_dependencies_result, pkg["name"], deps, err)
+
+        threading.Thread(target=run_lookup, daemon=True).start()
+
+    def _show_dependencies_result(self, name, deps, err):
+        if err:
+            self.deps_label.set_text(f"Could not fetch dependencies for {name}: {err}")
+        elif deps:
+            self.deps_label.set_text(f"Depends on: {', '.join(deps)}")
+        else:
+            self.deps_label.set_text(f"{name} has no listed dependencies.")
+
+    def on_install_selected_clicked(self, _):
+        if not self.selected_result:
+            return
+        pkg = self.selected_result
+        self.install_btn.set_sensitive(False)
+        self.status_label.set_text(f"Installing '{pkg['name']}' ({pkg['source']}) into Arch container...")
+        self.append_console(f"$ {pkg['name']} <- {pkg['source']}\n")
+        self._stream_container_command(
+            install_shell_cmd(pkg["name"], pkg["source"]),
+            on_done=lambda ok: self._on_install_done(pkg["name"], ok),
+        )
+
+    def _on_install_done(self, name, ok):
+        self.install_btn.set_sensitive(True)
+        if ok:
+            self.status_label.set_text(f"Successfully installed '{name}'.")
+            self.load_applications()
+            if self._installed_loaded:
+                self.refresh_installed()
+                self.refresh_history()
+        else:
+            self.status_label.set_text(f"Installation of '{name}' failed - see output below.")
+
+    # -- installed / updates / history -----------------------------------
+
+    def on_installed_selection_changed(self, selection):
+        model, treeiter = selection.get_selected()
+        if treeiter is None:
+            self.selected_installed = None
+            self.remove_btn.set_sensitive(False)
+        else:
+            self.selected_installed = model[treeiter][0]
+            self.remove_btn.set_sensitive(True)
+
+    def refresh_installed(self):
+        self.status_label.set_text("Loading installed packages...")
+
+        def run_list():
+            proc = run_in_container("pacman -Qe", timeout=20)
+            rows = []
+            if proc.returncode == 0:
+                for line in proc.stdout.splitlines():
+                    parts = line.split(None, 1)
+                    if len(parts) == 2:
+                        rows.append(parts)
+            GLib.idle_add(self._populate_installed, rows, proc.stderr if proc.returncode != 0 else None)
+
+        threading.Thread(target=run_list, daemon=True).start()
+
+    def _populate_installed(self, rows, err):
+        self.installed_store.clear()
+        for name, version in rows:
+            self.installed_store.append([name, version])
+        self.status_label.set_text(f"{len(rows)} package(s) installed in the Arch container." if not err else f"Could not list installed packages: {err}")
+
+    def on_check_updates_clicked(self, _):
+        self.updates_label.set_text("Checking for updates...")
+
+        def run_check():
+            proc = run_in_container("sudo pacman -Sy --noconfirm >/dev/null 2>&1; pacman -Qu", timeout=60)
+            lines = [l for l in proc.stdout.splitlines() if l.strip()]
+            GLib.idle_add(self._show_updates, lines)
+
+        threading.Thread(target=run_check, daemon=True).start()
+
+    def _show_updates(self, lines):
+        if not lines:
+            self.updates_label.set_text("Everything is up to date.")
+        else:
+            self.updates_label.set_text(f"{len(lines)} update(s) available:\n" + "\n".join(lines[:20]))
+
+    def on_update_all_clicked(self, _):
+        self.status_label.set_text("Updating all packages in the Arch container...")
+        self.append_console("$ pacman -Syu\n")
+        self._stream_container_command(
+            "sudo pacman -Syu --noconfirm",
+            on_done=lambda ok: self._on_update_all_done(ok),
+        )
+
+    def _on_update_all_done(self, ok):
+        if ok:
+            self.status_label.set_text("Update complete.")
+            self.updates_label.set_text("Everything is up to date.")
+            self.refresh_installed()
+            self.refresh_history()
+        else:
+            self.status_label.set_text("Update failed - see output below.")
+
+    def on_remove_selected_clicked(self, _):
+        if not self.selected_installed:
+            return
+        name = self.selected_installed
+        self.remove_btn.set_sensitive(False)
+        self.status_label.set_text(f"Removing '{name}'...")
+        self.append_console(f"$ pacman -R {name}\n")
+        self._stream_container_command(
+            remove_shell_cmd(name),
+            on_done=lambda ok: self._on_remove_done(name, ok),
+        )
+
+    def _on_remove_done(self, name, ok):
+        if ok:
+            self.status_label.set_text(f"Removed '{name}'.")
+            self.load_applications()
+            self.refresh_installed()
+            self.refresh_history()
+        else:
+            self.status_label.set_text(f"Removing '{name}' failed - see output below.")
+            self.remove_btn.set_sensitive(True)
+
+    def refresh_history(self):
+        def run_history():
+            cmd = (
+                "tail -n 500 /var/log/pacman.log 2>/dev/null | "
+                "grep -E '\\[ALPM\\] (installed|upgraded|removed)' | tail -n 150"
+            )
+            proc = run_in_container(cmd, timeout=15)
+            GLib.idle_add(self._show_history, proc.stdout)
+
+        threading.Thread(target=run_history, daemon=True).start()
+
+    def _show_history(self, text):
+        buf = self.history_view.get_buffer()
+        buf.set_text(text or "No activity recorded yet.")
+
+    # -- shared container-command streaming helper ------------------------
+
+    def _stream_container_command(self, shell_cmd, on_done):
+        def run_thread():
+            try:
+                proc = subprocess.Popen(
+                    container_argv(shell_cmd),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                )
+            except FileNotFoundError:
+                GLib.idle_add(self.append_console, "horizon-apps not found.\n")
+                GLib.idle_add(on_done, False)
+                return
+            for line in proc.stdout:
+                GLib.idle_add(self.append_console, line)
+            proc.wait()
+            GLib.idle_add(on_done, proc.returncode == 0)
+
+        threading.Thread(target=run_thread, daemon=True).start()
+
+    # ------------------------------------------------------------------
+    # App Drawer page
+    # ------------------------------------------------------------------
     def load_applications(self):
         # Clear existing
         for child in self.apps_flowbox.get_children():
@@ -125,7 +643,7 @@ class HorizonAppDrawer(Gtk.Window):
             os.path.expanduser("~/.local/share/applications"),
             os.path.expanduser("~/.local/share/applications/distrobox"),
         ]
-        
+
         apps = []
         seen_cmds = set()
         for d in desktop_dirs:
@@ -190,34 +708,13 @@ class HorizonAppDrawer(Gtk.Window):
             # Directly launch application (either native host or Distrobox containerized)
             btn.connect("clicked", lambda _, c=cmd: subprocess.Popen(c, shell=True))
             self.apps_flowbox.add(btn)
-        
+
         self.apps_flowbox.show_all()
 
     def on_search_changed(self, entry):
         q = entry.get_text().lower()
         filtered = [app for app in self.all_apps if q in app[0].lower()]
         self.render_apps(filtered)
-
-    def on_install_clicked(self, _):
-        pkg = self.pkg_input.get_text().strip()
-        if not pkg:
-            return
-        self.status_label.set_text(f"Installing '{pkg}' into Arch container...")
-        self.append_console(f"Running: distrobox enter arch-apps -- sudo pacman -S --noconfirm {pkg}\n")
-        
-        def run_thread():
-            cmd = f"horizon-apps sudo pacman -S --noconfirm {pkg} && distrobox-export --app {pkg}"
-            proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            for line in proc.stdout:
-                GLib.idle_add(self.append_console, line)
-            proc.wait()
-            if proc.returncode == 0:
-                GLib.idle_add(self.status_label.set_text, f"Successfully installed and exported '{pkg}'!")
-                GLib.idle_add(self.load_applications)
-            else:
-                GLib.idle_add(self.status_label.set_text, f"Installation of '{pkg}' failed.")
-
-        threading.Thread(target=run_thread, daemon=True).start()
 
     def on_create_snapshot(self, _):
         self.snap_status.set_text("Creating on-demand snapshot via Timeshift (rsync)...")
