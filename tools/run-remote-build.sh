@@ -169,8 +169,60 @@ sshpass -p "$US_SSH_PASSWORD" scp "${SCP_PORT_ARG[@]}" "$REMOTE_HOST:$REMOTE_ISO
 # Download checksums if present
 sshpass -p "$US_SSH_PASSWORD" scp "${SCP_PORT_ARG[@]}" "$REMOTE_HOST:$(dirname "$REMOTE_ISO")/*SUMS" "$OUTPUT_BASE/" 2>/dev/null || true
 
+# ---------------------------------------------------------------------------
+# Publish the ISO to the Community Edition folder on the remote server.
+# /drive1/community is exposed publicly via nginx at
+# https://us.iso.acreetionos.org:8448/community/
+# ---------------------------------------------------------------------------
+COMMUNITY_DIR="/drive1/community/Horizon"
+echo "==> Publishing ISO to Community Edition folder on server..."
+sshpass -p "$US_SSH_PASSWORD" ssh "${PORT_ARG[@]}" "$REMOTE_HOST" "mkdir -p /drive1/community/Horizon"
+
+# Rotate existing copies on the server (.iso -> .iso.1 -> .iso.2 ...)
+sshpass -p "$US_SSH_PASSWORD" ssh "${PORT_ARG[@]}" "$REMOTE_HOST" "
+set -e
+BASE=/drive1/community/Horizon/$ISO_BASENAME
+if [ -e \"\$BASE\" ]; then
+    MAX=0
+    for FILE in \"\$BASE\".*; do
+        [ -f \"\$file\" ] || continue
+        SUFFIX=\${file##*.}
+        case \"\$SUFFIX\" in
+            ''|*[!0-9]*) continue ;;
+        esac
+        [ \"\$SUFFIX\" -gt \"\$MAX\" ] && MAX=\$SUFFIX
+    done
+    for (( i=MAX; i>=1; i-- )); do
+        [ -f \"\$BASE.\$i\" ] && mv \"\$BASE.\$i\" \"\$BASE.\$((i+1))\"
+    done
+    mv \"\$BASE\" \"\$BASE.1\"
+fi
+"
+
+sshpass -p "$US_SSH_PASSWORD" ssh "${PORT_ARG[@]}" "$REMOTE_HOST" "cp -f '$REMOTE_ISO' /drive1/community/Horizon/$ISO_BASENAME && chmod 644 /drive1/community/Horizon/$ISO_BASENAME"
+# Publish SHA256SUMS for the Horizon folder (overwrite with the current build's sums)
+sshpass -p "$US_SSH_PASSWORD" ssh "${PORT_ARG[@]}" "$REMOTE_HOST" "cd \$(dirname '$REMOTE_ISO') && sha256sum \$(basename '$REMOTE_ISO') > /drive1/community/Horizon/SHA256SUMS && chmod 644 /drive1/community/Horizon/SHA256SUMS" 2>/dev/null || true
+# Refresh the -latest symlink for Horizon
+sshpass -p "$US_SSH_PASSWORD" ssh "${PORT_ARG[@]}" "$REMOTE_HOST" "ln -sf '$ISO_BASENAME' /drive1/community/Horizon/AcreetionOS-Horizon-latest.iso"
+
+DOWNLOAD_URL="https://us.iso.acreetionos.org:8448/community/Horizon/$ISO_BASENAME"
+LATEST_URL="https://us.iso.acreetionos.org:8448/community/Horizon/AcreetionOS-Horizon-latest.iso"
+
+# Verify the public URL responds
+HTTP_CODE=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 20 -I "$DOWNLOAD_URL" 2>/dev/null || echo "000")
+
 echo "===================================================================="
-echo "  ISO Download Complete!"
-echo "  Saved to: $OUTPUT_BASE/$ISO_BASENAME"
-ls -lh "$OUTPUT_BASE/$ISO_BASENAME"
+echo "  ISO Published to Community Edition"
+echo "  Saved locally to: $OUTPUT_BASE/$ISO_BASENAME"
+echo "  Download URL:     $DOWNLOAD_URL"
+echo "  Latest symlink:   $LATEST_URL"
+echo "  HTTP status:      $HTTP_CODE"
 echo "===================================================================="
+
+if [[ "$HTTP_CODE" == "200" ]]; then
+    echo "==> Opening download link in your default browser..."
+    xdg-open "$DOWNLOAD_URL" >/dev/null 2>&1 &
+else
+    echo "Warning: published URL did not return 200 (got $HTTP_CODE). Open manually:"
+    echo "  $LATEST_URL"
+fi
