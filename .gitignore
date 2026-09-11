@@ -13,3 +13,9 @@ mkarchiso_wrapper
 
 # Pacman cache
 /var/cache/pacman/pkg/*
+
+# Compiled Python bytecode from running/checking first-party scripts.
+# (Pre-built .pyc shipped inside the vendored airootfs/usr/lib/python3.11/
+# stdlib tree are already tracked and unaffected by this rule.)
+__pycache__/
+*.pyc

@@ -73,7 +73,6 @@ wpa_supplicant
 wireless-regdb
 wireless_tools
 openssh
-rsync
 
 ################################################################################
 # AUDIO SYSTEM
@@ -245,7 +244,12 @@ rsync
 # Package managers
 #yay-bin
 #libpamac-aur
-pamac-gtk3
+# pamac-gtk3 intentionally excluded: it links libalpm directly, so it would
+# keep working as a full pacman front-end even after postinstall.sh deletes
+# the pacman binaries, letting users roll ordinary Arch package upgrades
+# straight through the pinned GNOME 48 / XLibre stack. Freeman (image
+# updates) + horizon-apps (Distrobox) are the supported paths instead.
+#pamac-gtk3
 
 # Media players
 vlc

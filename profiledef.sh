@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
 
-iso_name="AcreetionOS"
-iso_label="acreetionOS_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
-iso_publisher="Acreetion OS"
-iso_application="Acreetion OS Install Media"
+iso_name="AcreetionOS-Horizon"
+iso_label="acreetionOS_horizon_$(date --date="@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m)"
+iso_publisher="Acreetion OS Community"
+iso_application="AcreetionOS Horizon Install Media"
 iso_version="1.0"
 install_dir="arch"
 buildmodes=('iso')
@@ -32,12 +32,13 @@ file_permissions=(
   ["/usr/bin/dd.sh"]="0:0:755"
   ["/usr/local/bin/postinstall.sh"]="0:0:755"
   ["/usr/bin/calamares.sh"]="0:0:755"
+  ["/usr/local/bin/preinstall-before"]="0:0:755"
   ["/usr/local/bin/stormos-final"]="0:0:755"
   ["/usr/bin/wifi-connection"]="0:0:755"
   ["/usr/local/bin/setup-displays.sh"]="0:0:755"
+  ["/usr/local/bin/horizon-image-update"]="0:0:755"
+  ["/usr/local/bin/horizon-image-update-gui"]="0:0:755"
   ["/usr/local/bin/freeman"]="0:0:755"
   ["/usr/local/bin/horizon-firstboot.sh"]="0:0:755"
-  ["/usr/local/bin/horizon-image-update"]="0:0:755"
-  ["/usr/local/bin/horizon-apps"]="0:0:755"
-  ["/usr/local/bin/horizon-app-drawer"]="0:0:755"
+  ["/usr/share/applications/horizon-image-update-gui.desktop"]="0:0:644"
 )
