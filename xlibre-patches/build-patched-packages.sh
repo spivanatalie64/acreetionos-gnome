@@ -14,7 +14,11 @@ for tool in git meson makepkg repo-add glib-mkenums; do
         exit 1
     }
 done
-rm -rf "$build_dir"
+if [[ "$(id -u)" -eq 0 ]]; then
+    rm -rf "$build_dir"
+else
+    rm -rf "$build_dir" 2>/dev/null || sudo rm -rf "$build_dir"
+fi
 mkdir -p "$source_dir" "$repo_dir"
 mapfile -t entries < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$manifest")
 
@@ -122,10 +126,14 @@ EOF
         cd "$package_path"
         if [[ "$(id -u)" -eq 0 ]]; then
             id -u builduser >/dev/null 2>&1 || useradd -m -s /bin/bash builduser
-            # Use an ACL instead of chown: grants builduser rwX without changing ownership,
-            # and avoids the /home/natalie 0700 traversal problem via default ACLs.
-            setfacl -R -m u:builduser:rwX "$build_dir" 2>/dev/null || chmod -R a+rwX "$build_dir"
-            HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" setpriv --reuid=builduser --regid=builduser --clear-groups env HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" HOME=/tmp makepkg --noconfirm --nodeps --clean
+            # Grant builduser rwX via ACL without changing ownership (keeps natalie access).
+            setfacl -R -m u:builduser:rwX "$build_dir" 2>/dev/null || chmod -R 777 "$build_dir"
+            # Default ACLs so files builduser creates stay accessible to the caller.
+            setfacl -R -d -m u:builduser:rwX "$build_dir" 2>/dev/null || true
+            # Re-grant natalie full access on the shared tree.
+            chmod 777 "$build_dir"
+            HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" setpriv --reuid=builduser --regid=builduser --clear-groups env HORIZON_STAGE="$stage_path" CFLAGS="$CFLAGS" CPPFLAGS="$CPPFLAGS" LDFLAGS="$LDFLAGS" PKG_CONFIG_PATH="$PKG_CONFIG_PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" HOME=/tmp XDG_CACHE_HOME=/tmp/.cache makepkg --noconfirm --nodeps --clean
+            setfacl -R -m u:"$(logname 2>/dev/null || echo natalie)":rwX "$build_dir" 2>/dev/null || true
         else
             HORIZON_STAGE="$stage_path" makepkg --noconfirm --nodeps --clean
         fi
@@ -144,4 +152,8 @@ Server = file://${repo_dir}
 
 EOF
 cat "$root_dir/pacman.conf" >> "$build_dir/pacman.conf"
-rm -rf "$source_dir" "$build_dir/meson" "$build_dir/stage" "$build_dir/package"
+if [[ "$(id -u)" -eq 0 ]]; then
+    rm -rf "$source_dir" "$build_dir/meson" "$build_dir/stage" "$build_dir/package"
+else
+    rm -rf "$source_dir" "$build_dir/meson" "$build_dir/stage" "$build_dir/package" 2>/dev/null || sudo rm -rf "$source_dir" "$build_dir/meson" "$build_dir/stage" "$build_dir/package"
+fi
