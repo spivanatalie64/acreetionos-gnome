@@ -94,9 +94,11 @@ sshpass -p "$US_SSH_PASSWORD" rsync -avz --delete \
     --exclude 'work/' \
     --exclude 'out/' \
     --exclude '.horizon-build/' \
+    --exclude 'build-metrics/' \
     --exclude 'chatbot-ui/node_modules/' \
     --exclude 'peertube/docker-volume/' \
     --exclude 'tools/freeman/target/' \
+    --exclude '*.log' \
     "$LOCAL_DIR/" "$REMOTE_HOST:$REMOTE_TARGET_DIR/"
 
 # Script to run inside the live gnome-terminal window
@@ -118,9 +120,39 @@ echo "  AcreetionOS Horizon - LIVE REMOTE BUILD STREAM"
 echo "===================================================================="
 echo "Connecting to remote build server..."
 
-# Connect and run full build with passwordless sudo or prompt
-sshpass -p "$SSH_PASS" ssh -t "${SSH_ARGS[@]}" "$REMOTE_HOST" "cd '$REMOTE_DIR' && sudo ./build.sh"
+# Connect and run the full build with passwordless sudo or prompt. Keep logs
+# outside the synced workspace so the build cannot overwrite or transfer them.
+set +e
+sshpass -p "$SSH_PASS" ssh -t "${SSH_ARGS[@]}" "$REMOTE_HOST" "bash -s -- '$REMOTE_DIR'" <<'REMOTE_BUILD_SCRIPT'
+set -uo pipefail
+
+REMOTE_DIR="$1"
+LOG_DIR="/.log"
+
+sudo mkdir -p "$LOG_DIR"
+sudo chown "$(id -un):$(id -gn)" "$LOG_DIR"
+
+log_number=1
+while :; do
+    log_file="$LOG_DIR/${log_number}.log"
+    if (set -o noclobber; : > "$log_file") 2>/dev/null; then
+        break
+    fi
+    ((log_number += 1))
+done
+
+printf 'Remote build log: %s\n' "$log_file"
+cd "$REMOTE_DIR" || exit 1
+
+set +e
+sudo ./build.sh 2>&1 | tee "$log_file"
+pipeline_status=(${PIPESTATUS[@]})
+set -e
+
+exit "${pipeline_status[0]}"
+REMOTE_BUILD_SCRIPT
 BUILD_STATUS=$?
+set -e
 
 echo ""
 if [[ $BUILD_STATUS -eq 0 ]]; then
@@ -140,10 +172,27 @@ EOF
 
 chmod +x "$BUILD_RUNNER_SCRIPT"
 
-# Launch interactive gnome-terminal and wait for completion
+# Launch interactive gnome-terminal and wait for completion. Fall back to
+# running the build stream in the current terminal when no display is usable.
+display_ok() {
+    [[ -n "${DISPLAY:-}" ]] || return 1
+    if command -v xdpyinfo >/dev/null 2>&1; then
+        timeout 5 xdpyinfo >/dev/null 2>&1
+    elif command -v xset >/dev/null 2>&1; then
+        xset -q >/dev/null 2>&1
+    else
+        return 0
+    fi
+}
+
 echo "==> Launching build monitoring terminal..."
-gnome-terminal --wait --title="AcreetionOS Horizon - Remote Build Stream" -- \
+if display_ok; then
+    gnome-terminal --wait --title="AcreetionOS Horizon - Remote Build Stream" -- \
+        "$BUILD_RUNNER_SCRIPT" "$REMOTE_TARGET_DIR" "$REMOTE_HOST" "$US_SSH_PASSWORD" "${PORT_ARG[@]}"
+else
+    printf 'No usable display for GNOME Terminal; streaming remote build here.\n'
     "$BUILD_RUNNER_SCRIPT" "$REMOTE_TARGET_DIR" "$REMOTE_HOST" "$US_SSH_PASSWORD" "${PORT_ARG[@]}"
+fi
 
 rm -f "$BUILD_RUNNER_SCRIPT"
 
@@ -184,13 +233,13 @@ set -e
 BASE=/drive1/community/Horizon/$ISO_BASENAME
 if [ -e \"\$BASE\" ]; then
     MAX=0
-    for FILE in \"\$BASE\".*; do
-        [ -f \"\$file\" ] || continue
-        SUFFIX=\${file##*.}
-        case \"\$SUFFIX\" in
+    for FILE in "\$BASE".*; do
+        [ -f "\$FILE" ] || continue
+        SUFFIX=\${FILE##*.}
+        case "\$SUFFIX" in
             ''|*[!0-9]*) continue ;;
         esac
-        [ \"\$SUFFIX\" -gt \"\$MAX\" ] && MAX=\$SUFFIX
+        [ "\$SUFFIX" -gt "\$MAX" ] && MAX=\$SUFFIX
     done
     for (( i=MAX; i>=1; i-- )); do
         [ -f \"\$BASE.\$i\" ] && mv \"\$BASE.\$i\" \"\$BASE.\$((i+1))\"
