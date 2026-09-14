@@ -37,5 +37,7 @@ file_permissions=(
   ["/usr/local/bin/horizon-image-update-gui"]="0:0:755"
   ["/usr/local/bin/freeman"]="0:0:755"
   ["/usr/local/bin/horizon-firstboot.sh"]="0:0:755"
+  ["/usr/local/bin/horizon-x11-diagnostic"]="0:0:755"
+  ["/usr/local/bin/horizon-display-manager"]="0:0:755"
   ["/usr/share/applications/horizon-image-update-gui.desktop"]="0:0:644"
 )

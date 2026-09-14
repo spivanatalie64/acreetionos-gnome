@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if grep -qw horizon.diagnostic /proc/cmdline; then
+    exec /usr/local/bin/horizon-x11-diagnostic
+fi
+
+exec /usr/bin/gdm "$@"
