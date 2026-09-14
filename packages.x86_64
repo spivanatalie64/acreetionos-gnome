@@ -92,6 +92,10 @@ xlibre-input-libinput
 xlibre-video-amdgpu
 xlibre-video-intel
 xlibre-video-nouveau
+xlibre-video-fbdev
+xlibre-video-vesa
+xlibre-video-qxl
+xlibre-video-cirrus
 xorg-xinit
 mesa
 mesa-utils
@@ -105,6 +109,14 @@ directx-headers
 # DISPLAY MANAGER & GNOME 48 DESKTOP
 ################################################################################
 gdm
+gnome-session
+gnome-desktop
+gnome-settings-daemon
+mutter
+gjs
+libei
+libdisplay-info
+startup-notification
 gnome-tweaks
 gnome-shell
 gnome-terminal
@@ -163,6 +175,7 @@ usbutils
 libusb-compat
 ddcutil
 broadcom-wl-dkms
+r8125-dkms
 ppp
 nvme-cli
 smartmontools

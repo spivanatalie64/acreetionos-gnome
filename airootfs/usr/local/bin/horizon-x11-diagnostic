@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -u
+set -x
+
+log_dir=/tmp/horizon-diagnostic
+mkdir -p "$log_dir"
+# Mirror everything to /dev/console as well: with console=ttyS0 on the
+# kernel command line this lands in the serial log, so failures are
+# visible even when the guest display never comes up.
+exec > >(tee "$log_dir/session.log" /dev/console) 2>&1
+
+echo "AcreetionOS Horizon X11 diagnostic"
+date --iso-8601=seconds
+echo "Kernel: $(uname -a)"
+echo "Command line: $(< /proc/cmdline)"
+echo "X server: $(command -v Xorg || command -v XLibre || echo missing)"
+Xorg -version 2>&1 | head -n 3 || true
+echo "Available X drivers:"
+ls /usr/lib/xorg/modules/drivers/ /usr/lib/xorg/modules/xlibre-*/drivers/ 2>/dev/null || true
+echo "DRM devices:"
+ls -l /dev/dri/ 2>/dev/null || echo "no /dev/dri"
+
+rm -f /tmp/.X11-unix/X0
+Xorg :0 -nolisten tcp -keeptty -novtswitch \
+    -logfile "$log_dir/Xorg.0.log" &
+xorg_pid=$!
+trap 'kill "$xorg_pid" 2>/dev/null || true' EXIT
+
+for _ in {1..20}; do
+    [[ -S /tmp/.X11-unix/X0 ]] && break
+    sleep 1
+done
+
+if [[ ! -S /tmp/.X11-unix/X0 ]]; then
+    echo "Xorg did not create display :0"
+    echo "--- Xorg.0.log ---"
+    cat "$log_dir/Xorg.0.log" 2>/dev/null || echo "(no Xorg log)"
+    echo "--- end Xorg.0.log (sleeping 120s for capture) ---"
+    sleep 120
+    exit 1
+fi
+
+export DISPLAY=:0
+export XDG_SESSION_TYPE=x11
+export XDG_CURRENT_DESKTOP=GNOME
+export XDG_SESSION_DESKTOP=gnome
+export GDK_BACKEND=x11
+export GI_TYPELIB_PATH=/usr/lib/mutter-16:/usr/lib/gnome-shell
+
+echo "Xorg started on :0; launching GNOME Shell without GDM"
+dbus-run-session -- gnome-shell >> "$log_dir/gnome-shell.log" 2>&1 &
+shell_pid=$!
+wait "$shell_pid"
+rc=$?
+echo "gnome-shell exited with code $rc; last log lines:"
+tail -n 30 "$log_dir/gnome-shell.log" 2>/dev/null || true
+sleep 60
+exit "$rc"
