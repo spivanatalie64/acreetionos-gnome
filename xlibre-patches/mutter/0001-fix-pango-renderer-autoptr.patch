@@ -1,20 +1,35 @@
+--- a/meson.build
++++ b/meson.build
+@@ -558,6 +558,11 @@
+ have_eventfd = cc.has_header('sys/eventfd.h')
+ 
+ cdata = configuration_data()
++if have_fonts
++  cdata.set('HAVE_PANGO_RENDERER_AUTOPTR',
++    cc.has_header_symbol('pango/pango.h', 'glib_autoptr_clear_PangoRenderer',
++      dependencies: pango_dep))
++endif
+ cdata.set_quoted('GETTEXT_PACKAGE', gettext_package)
+ cdata.set_quoted('VERSION', meson.project_version())
+ cdata.set_quoted('PACKAGE_NAME', meson.project_name())
+--- a/config.h.meson
++++ b/config.h.meson
+@@ -144,3 +144,6 @@
+ 
+ /* Building with font rendering integration support */
+ #mesondefine HAVE_FONTS
++
++/* Pango provides the PangoRenderer autoptr cleanup function. */
++#mesondefine HAVE_PANGO_RENDERER_AUTOPTR
 --- a/clutter/clutter/pango/clutter-pango-private.h
 +++ b/clutter/clutter/pango/clutter-pango-private.h
-@@ -23,6 +23,7 @@
+@@ -79,7 +79,9 @@
+                           ClutterColorState *color_state,
+                           ClutterColorState *target_color_state);
  
- #include "clutter/clutter-types.h"
- #include "cogl/cogl.h"
-+#include <pango/pango.h>
- 
- G_BEGIN_DECLS
- 
-@@ -79,7 +80,9 @@
- 
- GType clutter_pango_renderer_get_type (void) G_GNUC_CONST;
- 
-+#if !defined(PANGO_VERSION_CHECK) || !PANGO_VERSION_CHECK(1, 56, 0)
++#ifndef HAVE_PANGO_RENDERER_AUTOPTR
  G_DEFINE_AUTOPTR_CLEANUP_FUNC (PangoRenderer, g_object_unref)
 +#endif
  
- PangoRenderer *clutter_pango_renderer_new (CoglFramebuffer *fb);
- 
+ static inline PangoDirection
+ clutter_text_direction_to_pango_direction (ClutterTextDirection dir)

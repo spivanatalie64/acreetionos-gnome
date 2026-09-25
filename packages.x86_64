@@ -80,6 +80,8 @@ openssh
 alsa-utils
 pipewire-pulse
 wireplumber
+pipewire
+wireplumber
 pavucontrol
 sof-firmware
 

@@ -11,7 +11,9 @@
 
 set -euo pipefail
 
-LOCAL_DIR="/home/natalie/Projects/acreetionos-gnome"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+LOCAL_DIR="${LOCAL_DIR:-$REPO_ROOT}"
 OUTPUT_BASE="$HOME/ISO_OUTPUT/Horizon"
 REMOTE_TARGET_DIR="${1:-/home/natalie/Projects/acreetionos-gnome}"
 

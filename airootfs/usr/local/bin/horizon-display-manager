@@ -5,4 +5,16 @@ if grep -qw horizon.diagnostic /proc/cmdline; then
     exec /usr/local/bin/horizon-x11-diagnostic
 fi
 
-exec /usr/bin/gdm "$@"
+# Ensure /var/lib/gdm and /var/log/gdm exist with correct permissions
+mkdir -p /var/lib/gdm /var/log/gdm
+chown -R 120:120 /var/lib/gdm 2>/dev/null || true
+chown -R 0:120 /var/log/gdm 2>/dev/null || true
+chmod 0750 /var/lib/gdm /var/log/gdm 2>/dev/null || true
+
+if [[ -x /usr/bin/gdm ]]; then
+    exec /usr/bin/gdm "$@"
+elif [[ -x /usr/sbin/gdm ]]; then
+    exec /usr/sbin/gdm "$@"
+else
+    exec gdm "$@"
+fi

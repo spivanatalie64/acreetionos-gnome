@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Wrapper to run the remote build with the US_SSH server
+set -euo pipefail
+
+SCRIPT_DIR="/home/natalie/.ai/.src/acreetionos-gnome"
+
+# Source US_SSH variables if not already in environment
+if [[ -z "${US_SSH:-}" || -z "${US_SSH_PASSWORD:-}" ]]; then
+    if [[ -f "$HOME/.bashrc" ]]; then
+        source <(grep -E '^(export )?US_SSH' "$HOME/.bashrc") || true
+    fi
+fi
+
+if [[ -z "${US_SSH:-}" ]]; then
+    echo "Error: US_SSH environment variable is not set." >&2
+    exit 1
+fi
+
+exec "$SCRIPT_DIR/tools/run-remote-build.sh" "$@"

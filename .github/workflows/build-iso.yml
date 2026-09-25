@@ -79,9 +79,7 @@ jobs:
             gtk3 \
             gnome-desktop \
             gnome-desktop-4 \
-            python-docutils \
             itstool \
-            yelp-tools \
             gjs \
             gnome-autoar \
             libibus \
@@ -102,8 +100,7 @@ jobs:
             bash-completion \
             libxcvt \
             xtrans \
-            sassc \
-            xmlto
+            sassc
 
       - name: Build patched GNOME 48 / XLibre packages
         run: |

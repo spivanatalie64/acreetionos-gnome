@@ -1,18 +1,30 @@
 [Unit]
 Description=GNOME Display Manager
-Conflicts=getty@tty1.service plymouth-quit.service
-After=systemd-user-sessions.service getty@tty1.service plymouth-quit.service systemd-logind.service
+
+# replaces the getty
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+# replaces plymouth-quit since it quits plymouth on its own
+Conflicts=plymouth-quit.service
+After=plymouth-quit.service
+
+# Needs all the dependencies of the services it's replacing
+After=rc-local.service plymouth-start.service systemd-user-sessions.service
+
+# GDM takes responsibility for stopping plymouth, so if it fails
+# for any reason, make sure plymouth still stops
+OnFailure=plymouth-quit.service
 
 [Service]
 ExecStart=/usr/local/bin/horizon-display-manager
 KillMode=mixed
 Restart=always
-RestartSec=1s
 IgnoreSIGPIPE=no
-BusName=org.freedesktop.DisplayManager
-StandardError=inherit
+BusName=org.gnome.DisplayManager
 EnvironmentFile=-/etc/locale.conf
-EnvironmentFile=-/etc/gdm/custom.conf
+ExecReload=/bin/kill -SIGHUP $MAINPID
+KeyringMode=shared
 
 [Install]
 Alias=display-manager.service

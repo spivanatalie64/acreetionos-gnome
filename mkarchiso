@@ -179,6 +179,12 @@ _cleanup_pacstrap_dir() {
     [[ -d "${pacstrap_dir}/var/log" ]] && find "${pacstrap_dir}/var/log" -type f -delete
     # Delete all temporary files and dirs
     [[ -d "${pacstrap_dir}/var/tmp" ]] && find "${pacstrap_dir}/var/tmp" -mindepth 1 -delete
+    # Delete documentation, manuals, gtk-docs, and help files
+    rm -rf -- "${pacstrap_dir}/usr/share/doc" \
+              "${pacstrap_dir}/usr/share/gtk-doc" \
+              "${pacstrap_dir}/usr/share/man" \
+              "${pacstrap_dir}/usr/share/info" \
+              "${pacstrap_dir}/usr/share/help"
     # Delete package pacman related files.
     find "${work_dir}" \( -name '*.pacnew' -o -name '*.pacsave' -o -name '*.pacorig' \) -delete
     # Create /etc/machine-id with special value 'uninitialized': the final id is
@@ -377,9 +383,9 @@ _make_packages() {
 
     # Unset TMPDIR to work around https://bugs.archlinux.org/task/70580
     if [[ "${quiet}" = "y" ]]; then
-        env -u TMPDIR pacstrap -C "${work_dir}/${buildmode}.pacman.conf" -c -G -M --overwrite '*' "${pacstrap_dir}" "${buildmode_pkg_list[@]}" &>/dev/null
+        env -u TMPDIR pacstrap -C "${work_dir}/${buildmode}.pacman.conf" -c -G -M "${pacstrap_dir}" --overwrite '*' "${buildmode_pkg_list[@]}" &>/dev/null
     else
-        env -u TMPDIR pacstrap -C "${work_dir}/${buildmode}.pacman.conf" -c -G -M --overwrite '*' "${pacstrap_dir}" "${buildmode_pkg_list[@]}"
+        env -u TMPDIR pacstrap -C "${work_dir}/${buildmode}.pacman.conf" -c -G -M "${pacstrap_dir}" --overwrite '*' "${buildmode_pkg_list[@]}"
     fi
 
     if [[ -v cert_list[0] ]]; then

@@ -1,0 +1,25 @@
+--- a/meson.options
++++ b/meson.options
+@@ -230,3 +230,9 @@
+   value: true,
+   description: 'Integrate bash completion for gdctl'
+ )
++
++option('man',
++  type: 'boolean',
++  value: true,
++  description: 'Generate and install manual pages'
++)
+--- a/meson.build
++++ b/meson.build
+@@ -734,7 +734,9 @@
+ subdir('tools')
+ subdir('src')
+ subdir('po')
+-subdir('doc/man')
++if get_option('man')
++  subdir('doc/man')
++endif
+ if have_documentation
+   subdir('doc/reference')
+ endif

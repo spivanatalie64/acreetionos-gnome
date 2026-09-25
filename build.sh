@@ -73,11 +73,28 @@ EFFECTIVE_PACMAN_CONF="$PACMAN_CONF"
 if [[ -f "$HORIZON_BUILD_DIR/pacman.conf" ]]; then
     EFFECTIVE_PACMAN_CONF="$HORIZON_BUILD_DIR/pacman.conf"
     echo "    Using layered pacman.conf with local patched repository"
+
+    # mkarchiso's pacstrap runs with hostcache enabled, reusing the system's
+    # /var/cache/pacman/pkg/ across builds. Our patched packages keep a
+    # static pkgver/pkgrel/epoch between rebuilds, so a stale cached copy
+    # from an earlier build can collide with the checksums repo-add just
+    # wrote for this run's freshly compiled bytes. Evict only our own
+    # packages so pacman is forced to pull the current build from the
+    # local repo.
+    if [[ -d "$HORIZON_BUILD_DIR/repo" ]]; then
+        host_cache_dir="$(pacman-conf CacheDir 2>/dev/null | head -n1)"
+        if [[ -n "$host_cache_dir" && -d "$host_cache_dir" ]]; then
+            for pkg_file in "$HORIZON_BUILD_DIR/repo"/*.pkg.tar.*; do
+                [[ -e "$pkg_file" ]] || continue
+                rm -f "$host_cache_dir/$(basename "$pkg_file")"
+            done
+        fi
+    fi
 fi
 
 export PACMAN_OPTS="--overwrite *"
 export PACMAN_CONFIG="$EFFECTIVE_PACMAN_CONF"
-mkarchiso \
+./mkarchiso \
     -L "$ISO_LABEL" \
     -v \
     -w "$WORK_DIR" \

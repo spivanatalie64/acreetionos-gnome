@@ -1,6 +1,6 @@
 --- a/common/gdm-settings-utils.h
 +++ b/common/gdm-settings-utils.h
-@@ -45,7 +45,7 @@
+@@ -44,7 +44,7 @@
                                                                  GSList     **list);
  
  gboolean                  gdm_settings_parse_value_as_boolean  (const char *value,
@@ -12,7 +12,7 @@
 --- a/common/gdm-settings-utils.c
 +++ b/common/gdm-settings-utils.c
 @@ -287,16 +287,16 @@
- 
+ /* adapted from GKeyFile */
  gboolean
  gdm_settings_parse_value_as_boolean (const char *value,
 -                                     gboolean   *bool)
