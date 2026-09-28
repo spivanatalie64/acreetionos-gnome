@@ -120,7 +120,7 @@ jobs:
       - name: Construct Horizon ISO image
         run: |
           chmod +x build.sh refresh.sh mkarchiso.sh
-          HORIZON_SKIP_PATCHED_PACKAGES=1 HORIZON_REBUILD_FREEMAN=0 ./build.sh
+          HORIZON_SKIP_PATCHED_PACKAGES=1 HORIZON_REBUILD_FREEMAN=0 HORIZON_BUILD_DIR="$GITHUB_WORKSPACE/.horizon-build" ./build.sh
           ls -lh ../ISO/ || ls -lh out/
 
       - name: Compute SHA-256 Checksums
