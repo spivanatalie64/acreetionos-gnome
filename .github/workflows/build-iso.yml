@@ -24,6 +24,11 @@ jobs:
           pacman-key --populate archlinux
           pacman -Syu --noconfirm --needed archlinux-keyring
 
+      - name: Add custom repositories
+        run: |
+          echo -e "\n[acreetionOSREPO]\nSigLevel = Optional\nServer = https://iso.acreetionos.org:8448/repo/\$arch" >> /etc/pacman.conf
+          pacman -Sy
+
       - name: Install build tools and build dependencies
         run: |
           pacman -S --noconfirm --needed \
