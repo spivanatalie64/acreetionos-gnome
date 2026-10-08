@@ -28,7 +28,7 @@ sgx:x:988:
 storage:x:987:liveuser
 tty:x:5:
 uucp:x:986:
-video:x:985:liveuser,gdm
+video:x:985:liveuser,lightdm
 users:x:984:liveuser
 groups:x:983:
 systemd-journal:x:982:
@@ -52,9 +52,8 @@ colord:x:971:
 geoclue:x:970:
 rtkit:x:133:
 nvidia-persistenced:x:143:
-lightdm:x:969:
-git:x:968:
+lightdm:x:120:git:x:968:
 torguard:x:967:
 autologin:x:966:root,liveuser
-gdm:x:120:
+lightdm:x:120:
 liveuser:x:1000:

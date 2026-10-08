@@ -90,17 +90,6 @@ for entry in "${entries[@]}"; do
             rm -rf "$directory"
         fi
     done
-    # The ISO overlay owns GDM's configuration.
-    if [[ "$package" == gdm ]]; then
-        rm -f "$stage_path/etc/gdm/custom.conf"
-        mkdir -p "$stage_path/usr/lib/sysusers.d" "$stage_path/var/lib/gdm" "$stage_path/var/log/gdm"
-        cat > "$stage_path/usr/lib/sysusers.d/gdm.conf" <<'SYSEOF'
-g gdm 120 -
-u gdm 120 "Gnome Display Manager" /var/lib/gdm /usr/bin/nologin
-m gdm video
-SYSEOF
-    fi
-
     # Relocate only build copies of .pc files; packaged metadata stays under /usr.
     python3 "$root_dir/xlibre-patches/build-support.py" stage-pkgconfig "$stage_path" "$run_dir/pkgconfig"
     mkdir -p "$run_dir/share/gir-1.0"
@@ -131,10 +120,6 @@ package() {
     cp -a "\$HORIZON_STAGE/." "\$pkgdir/"
 }
 EOF
-    # Upstream GDM installs both daemon and libgdm, unlike Arch's split package.
-    if [[ "$package" == gdm ]]; then
-        printf "provides=('libgdm=%s' 'libgdm.so=1-64')\nconflicts=('libgdm')\n" "${ref#v}" >> "$package_path/PKGBUILD"
-    fi
     (
         if [[ "$(id -u)" -eq 0 ]]; then
             id -u builduser >/dev/null 2>&1 || useradd -m -s /bin/bash builduser

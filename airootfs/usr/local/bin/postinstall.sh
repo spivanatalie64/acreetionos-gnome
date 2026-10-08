@@ -41,5 +41,9 @@ if command -v timeshift &>/dev/null; then
 fi
 
 rm -f /etc/mkinitcpio.conf.d/archiso.conf
-systemctl enable gdm.service
+# NOTE: GDM was replaced by LightDM (issue #8). lightdm.service is enabled
+# here, but the shipped /etc/systemd/system/display-manager.service wrapper
+# (see airootfs) still wins over the package's alias and runs
+# /usr/local/bin/horizon-display-manager, which execs lightdm.
+systemctl enable lightdm.service
 systemctl daemon-reload

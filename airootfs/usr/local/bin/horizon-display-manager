@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
+# NOTE: GDM was replaced by LightDM as Horizon's display manager (issue #8).
+# This wrapper is kept so the display-manager.service unit, the live-session
+# autologin path and the kernel cmdline diagnostic bypass all keep a single
+# entry point. LightDM uses /var/lib/lightdm and /var/log/lightdm; uid/gid
+# 120 is the lightdm system user defined in airootfs/etc/{passwd,group}.
 set -euo pipefail
 
 if grep -qw horizon.diagnostic /proc/cmdline; then
     exec /usr/local/bin/horizon-x11-diagnostic
 fi
 
-# Ensure /var/lib/gdm and /var/log/gdm exist with correct permissions
-mkdir -p /var/lib/gdm /var/log/gdm
-chown -R 120:120 /var/lib/gdm 2>/dev/null || true
-chown -R 0:120 /var/log/gdm 2>/dev/null || true
-chmod 0750 /var/lib/gdm /var/log/gdm 2>/dev/null || true
+# Ensure /var/lib/lightdm and /var/log/lightdm exist with correct permissions
+# (uid/gid 120 = the lightdm system user, mirroring airootfs passwd/group).
+mkdir -p /var/lib/lightdm /var/log/lightdm
+chown -R 120:120 /var/lib/lightdm 2>/dev/null || true
+chown -R 0:120 /var/log/lightdm 2>/dev/null || true
+chmod 0750 /var/lib/lightdm /var/log/lightdm 2>/dev/null || true
 
-if [[ -x /usr/bin/gdm ]]; then
-    exec /usr/bin/gdm "$@"
-elif [[ -x /usr/sbin/gdm ]]; then
-    exec /usr/sbin/gdm "$@"
+if [[ -x /usr/bin/lightdm ]]; then
+    exec /usr/bin/lightdm "$@"
 else
-    exec gdm "$@"
+    exec lightdm "$@"
 fi

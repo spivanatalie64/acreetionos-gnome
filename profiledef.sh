@@ -42,6 +42,8 @@ file_permissions=(
   ["/usr/local/bin/horizon-display-manager"]="0:0:755"
   ["/usr/share/applications/horizon-image-update-gui.desktop"]="0:0:644"
   ["/etc/sudoers.d/g_wheel"]="0:0:440"
-  ["/var/lib/gdm"]="120:120:0750"
-  ["/var/log/gdm"]="0:120:0750"
+  # NOTE: GDM swapped for LightDM (issue #8). uid/gid 120 = the lightdm system
+  # user defined in airootfs/etc/{passwd,group}; keep the account DBs in sync.
+  ["/var/lib/lightdm"]="120:120:0750"
+  ["/var/log/lightdm"]="0:120:0750"
 )
