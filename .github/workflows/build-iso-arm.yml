@@ -16,9 +16,12 @@ jobs:
     name: Build aarch64 Horizon ISO (alpha)
     # Native arm64 runner: cross-building an ISO pacstrap is not supported by
     # mkarchiso, so the counterpart pipeline runs the build natively.
+    # Privileged like the x86_64 workflow: mkarchiso needs loop devices,
+    # chroot/mount and device nodes that an unprivileged container lacks.
     runs-on: ubuntu-24.04-arm
     container:
       image: arm64v8/archlinux:base-devel
+      options: --privileged
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -65,11 +68,29 @@ jobs:
           ./build.sh -H --arch aarch64
           ls -lh out/ ../ISO/ 2>/dev/null || true
 
-      - name: Boot smoke test (qemu aarch64)
+      - name: Boot smoke test (qemu aarch64 arm emulator, TCG)
         run: |
           chmod +x tools/ci/boot-test.sh
+          # Testing policy (see issue #14): CI tests run under the ARM
+          # emulator - qemu-system-aarch64 in TCG emulation, -M virt,
+          # one core per ARM generation (cpu-models-aarch64.conf). GitHub
+          # hosted runners never expose /dev/kvm, so the hypervisor is
+          # forced to tcg explicitly instead of relying on auto-detect:
+          # a hosted runner that ever grew /dev/kvm must not silently
+          # change what this step measures.
           ISO="$(ls -1t ../ISO/*.iso out/*.iso 2>/dev/null | head -n1)"
-          ./tools/ci/boot-test.sh --arch aarch64 --iso "$ISO" --timeout 900
+          ./tools/ci/boot-test.sh --arch aarch64 --iso "$ISO" --hypervisors tcg --timeout 900
+
+      - name: Upload boot test report (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AcreetionOS-Horizon-boot-test-aarch64
+          path: |
+            ../ISO/boot-test/
+            out/boot-test/
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Compute SHA-256 Checksums
         run: |
