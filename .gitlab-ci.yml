@@ -1,25 +1,41 @@
 # ═══════════════════════════════════════════════════════════════════
 #  AcreetionOS ISO Build Pipeline
 #  Branch: acreetionos
-#  Builder: self-hosted shell runner on Dell Precision 7910
 #
-#  RUNNER SETUP (run once on the build server):
+#  CONTAINER BUILD POLICY (issue #12):
+#  Every variant build runs inside a Docker container, mirroring the
+#  GitHub Actions workflows (.github/workflows/build-iso.yml and
+#  build-iso-arm.yml), which use the same base image
+#  (archlinux:base-devel / arm64v8/archlinux:base-devel).
+#
+#  RUNNER SETUP (run once on the build server) - docker executor:
 #    gitlab-runner register \
 #      --url https://gitlab.acreetionos.org \
 #      --token <YOUR_RUNNER_TOKEN> \
-#      --executor shell \
+#      --executor docker \
+#      --docker-image archlinux:base-devel \
+#      --docker-privileged \
 #      --description "acreetionos-builder" \
 #      --tag-list "acreetionos" \
 #      --run-untagged false
 #
-#  The runner user needs passwordless sudo (or run as root).
-#  mkarchiso requires loop device access for squashfs builds.
+#    # config.toml [runners.docker] must contain:
+#    #   privileged = true
+#    #   volumes = ["/var/cache/gitlab-runner:/cache", "/srv/http/iso:/srv/http/iso"]
+#    # mkarchiso needs loop devices, chroot/mount and device nodes; the
+#    # publish job binds the nginx-served ISO directory into the job's
+#    # container. qatest:boot-matrix additionally wants /dev/kvm exposed
+#    # (GPU/device passthrough happens automatically in privileged mode).
 # ═══════════════════════════════════════════════════════════════════
 
 stages:
   - prepare
   - build
   - publish
+
+# Docker executor default for all jobs that don't override it.
+default:
+  image: archlinux:base-devel
 
 variables:
   ISO_OUT_DIR:   "${CI_PROJECT_DIR}/out"
@@ -35,28 +51,33 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
 
 # ───────────────────────────────────────────────────────────────────
+# Shared script: container images start pristine on every job, so the
+# keyring + build-deps.txt setup runs per job (the GitHub workflows do
+# the same inside their containers).
+# ───────────────────────────────────────────────────────────────────
+.container-setup:
+  script: &container-setup
+    - echo "==> Initialising pacman keyring inside container..."
+    - pacman-key --init
+    - pacman-key --populate archlinux
+    - pacman -Sy --noconfirm --needed archlinux-keyring
+    - echo "==> Installing build dependencies from build-deps.txt..."
+    - pacman -Sy --noconfirm --needed --config "${CI_PROJECT_DIR}/pacman.conf" $(grep -v '^\s*#\|^\s*$' "${CI_PROJECT_DIR}/build-deps.txt")
+    - mkarchiso --version
+
+# ───────────────────────────────────────────────────────────────────
 # STAGE 1 – PREPARE
-# Refresh keyring and ensure archiso + build deps are installed
+# Proves the docker executor + image are functional; also acts as the
+# "environment ready" gate that previously ran on the shell runner.
 # ───────────────────────────────────────────────────────────────────
 prepare:deps:
   stage: prepare
-  tags:
-    - acreetionos
-  script:
-    - echo "==> Initialising pacman keyring..."
-    - pacman-key --init
-    - pacman-key --populate archlinux
-    - echo "==> Refreshing databases and upgrading keyring..."
-    - pacman -Sy --noconfirm --config "${CI_PROJECT_DIR}/pacman.conf" archlinux-keyring
-    - echo "==> Installing archiso build dependencies..."
-    - pacman -S --noconfirm --needed --config "${CI_PROJECT_DIR}/pacman.conf" archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive edk2-shell
-    - echo "==> Build environment ready."
-    - mkarchiso --version
+  script: *container-setup
   rules:
     - when: always
 
 # ───────────────────────────────────────────────────────────────────
-# STAGE 2 – BUILD ISO
+# STAGE 2 – BUILD ISO (x86_64 variant, inside container)
 # pacman.conf defines:
 #   [acreetionOSREPO-main]  iso.acreetionos.org:8448/repo-main/$arch
 #   [personal]              iso.acreetionos.org:8448/personal
@@ -71,14 +92,14 @@ build:iso:
   needs:
     - prepare:deps
   timeout: 3h
-  before_script:
+  before_script: *container-setup
+  script:
+    - echo "==> Starting AcreetionOS ISO build (in container)..."
+    - echo "    Commit  ${CI_COMMIT_SHORT_SHA}  Branch  ${CI_COMMIT_BRANCH:-tag:$CI_COMMIT_TAG}  Runner  ${CI_RUNNER_DESCRIPTION}"
+    - cd "${CI_PROJECT_DIR}"
     - echo "==> Cleaning previous build artifacts..."
     - rm -rf "${WORK_DIR}" "${ISO_OUT_DIR}"
     - mkdir -p "${ISO_OUT_DIR}"
-  script:
-    - echo "==> Starting AcreetionOS ISO build..."
-    - echo "    Commit  ${CI_COMMIT_SHORT_SHA}  Branch  ${CI_COMMIT_BRANCH:-tag:$CI_COMMIT_TAG}  Runner  ${CI_RUNNER_DESCRIPTION}"
-    - cd "${CI_PROJECT_DIR}"
     - mkarchiso -L "${ISO_LABEL}" -v -w "${WORK_DIR}" -o "${ISO_OUT_DIR}" -C "${CI_PROJECT_DIR}/pacman.conf" "${CI_PROJECT_DIR}"
     - echo "==> Build complete."
     - ls -lh "${ISO_OUT_DIR}"/*.iso
@@ -98,9 +119,10 @@ build:iso:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 4 – PRE-RELEASE QA (alpha gate)
-# Boot-tests the produced ISO across the CPU-generation matrix; requires a
-# runner that exposes /dev/kvm and has qemu-system-x86_64. Set
-# HORIZON_BOOT_TEST=1 (e.g. via the web pipeline) to include it in a run.
+# Boot-tests the produced ISO across the CPU-generation matrix; runs in a
+# privileged container (see RUNNER SETUP above) that must see the host's
+# /dev/kvm for hardware-accelerated qemu. Set HORIZON_BOOT_TEST=1 (e.g. via
+# the web pipeline) to include it in a run.
 # ─────────────────────────────────────────────────────────────────────────────
 qatest:boot-matrix:
   stage: publish
@@ -108,6 +130,7 @@ qatest:boot-matrix:
     - acreetionos
   needs:
     - build:iso
+  before_script: *container-setup
   script:
     - chmod +x tools/ci/boot-test.sh
     - ./tools/ci/boot-test.sh --iso "$(ls -1t "${ISO_OUT_DIR}"/*.iso | head -n1)"
@@ -118,24 +141,37 @@ qatest:boot-matrix:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STAGE 5 – ARM COUNTERPART (alpha tier)
-# Builds the aarch64 ISO on a self-hosted ARM64 runner tagged
-# "acreetionos-arm" (mkarchiso cannot pacstrap cross-arch, so the counterpart
-# is built natively). Patched XLibre packages are x86_64-only and are skipped.
+# Builds the aarch64 ISO natively inside an arm64 container on a
+# docker-executor ARM64 runner tagged "acreetionos-arm" (mkarchiso cannot
+# pacstrap cross-arch, so the counterpart is built natively). Patched XLibre
+# packages are x86_64-only and are skipped.
 # ─────────────────────────────────────────────────────────────────────────────
 build:iso-arm:
   stage: build
   tags:
     - acreetionos-arm
+  image: arm64v8/archlinux:base-devel
   needs: []
   timeout: 3h
+  before_script:
+    - echo "==> Initialising keyrings inside arm64 container..."
+    - pacman-key --init
+    - pacman-key --populate archlinux
+    # Add the ARM mirror, pull its keyring, then trust in-package keys.
+    - printf '\n[core]\nServer = http://mirror.archlinuxarm.org/\$arch/core\n' >> /etc/pacman.conf
+    - pacman -Sy --noconfirm --needed archlinux-keyring
+    - printf '\n[alarm]\nServer = http://mirror.archlinuxarm.org/\$arch/alarm\n' >> /etc/pacman.conf
+    - pacman -Sy --noconfirm --allow-unsigned-package archlinuxarm-keyring || true
+    - echo "==> Installing build dependencies from build-deps.txt..."
+    - pacman -Sy --noconfirm --needed $(grep -v '^\s*#\|^\s*$' "${CI_PROJECT_DIR}/build-deps.txt")
   script:
-    - echo "==> Starting AcreetionOS ISO build (aarch64 counterpart)..."
+    - echo "==> Starting AcreetionOS ISO build (aarch64 counterpart, in container)..."
     - cd "${CI_PROJECT_DIR}"
     - HORIZON_SKIP_PATCHED_PACKAGES=1 ./build.sh -H -c ./pacman-aarch64.conf || true
     # build.sh -H requires root on the runner user; run mkarchiso directly if
     # the runner is unprivileged:
     - |
-      if [ ! -e ../ISO/*.iso ] && [ ! -e out/*.iso ]; then
+      if [ ! -e "${ISO_OUT_DIR}"/*.iso ]; then
         PATH="${CI_PROJECT_DIR}:${PATH}" mkarchiso -L AcreetionOS -v -w "${WORK_DIR}-arm" -o "${ISO_OUT_DIR}" -C "${CI_PROJECT_DIR}/pacman-aarch64.conf" "${CI_PROJECT_DIR}"
       fi
     - ls -lh "${ISO_OUT_DIR}"/*.iso
@@ -157,6 +193,9 @@ build:iso-arm:
 # STAGE 3 – PUBLISH
 # Copies ISO to the nginx-served directory, updates latest symlink,
 # keeps the 3 most recent builds and prunes the rest.
+# NOTE (docker executor): /srv/http/iso must be bind-mounted into the
+# job container (see RUNNER SETUP volumes above) - the publish dir lives
+# on the host, not inside the pristine container image.
 # ───────────────────────────────────────────────────────────────────
 publish:iso:
   stage: publish

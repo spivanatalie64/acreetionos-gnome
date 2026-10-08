@@ -16,9 +16,12 @@ jobs:
     name: Build aarch64 Horizon ISO (alpha)
     # Native arm64 runner: cross-building an ISO pacstrap is not supported by
     # mkarchiso, so the counterpart pipeline runs the build natively.
+    # Privileged like the x86_64 workflow: mkarchiso needs loop devices,
+    # chroot/mount and device nodes that an unprivileged container lacks.
     runs-on: ubuntu-24.04-arm
     container:
       image: arm64v8/archlinux:base-devel
+      options: --privileged
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
