@@ -248,7 +248,7 @@ class RecoveryApp(Gtk.Window):
 
         desc = Gtk.Label()
         desc.set_markup("<b>Bootloader & Kernel Image Repair</b>\n"
-                        "Rebuild the system initial ramdisk and GRUB configuration if boot hangs early or after kernel updates.")
+                        "Refresh the systemd-boot loader binaries and regenerate boot entries if boot hangs early or after kernel updates.")
         desc.set_halign(Gtk.Align.START)
         vbox.pack_start(desc, False, False, 0)
 
@@ -264,10 +264,10 @@ class RecoveryApp(Gtk.Window):
         # GRUB
         card2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         vbox.pack_start(card2, False, False, 0)
-        btn_grub = Gtk.Button(label="Rebuild GRUB & Clear Failure Counters")
+        btn_grub = Gtk.Button(label="Rebuild systemd-boot Loader & Entries")
         btn_grub.connect("clicked", lambda b: self.run_async_backend(["rebuild-grub"]))
         card2.pack_start(btn_grub, False, False, 0)
-        lbl2 = Gtk.Label(label="Regenerates /boot/grub/grub.cfg and resets boot_counter to 0.")
+        lbl2 = Gtk.Label(label="Runs bootctl update/install and re-runs kernel-install for installed kernels.")
         card2.pack_start(lbl2, False, False, 0)
 
         return vbox

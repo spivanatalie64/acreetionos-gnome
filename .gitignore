@@ -19,3 +19,6 @@ mkarchiso_wrapper
 # stdlib tree are already tracked and unaffected by this rule.)
 __pycache__/
 *.pyc
+.horizon-build/
+*.log
+boot-test-run.*

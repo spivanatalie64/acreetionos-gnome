@@ -1,0 +1,93 @@
+# AcreetionOS Horizon build dependencies (Arch package names).
+# One package per line; lines starting with '#' and blank lines are ignored.
+# This list is the single source of truth consumed by both the container
+# bootstrap (tools/container/setup-build-env.sh) and .github/workflows/build-iso.yml.
+#
+# ISO construction
+archiso
+squashfs-tools
+dosfstools
+erofs-utils
+mtools
+xorriso
+libarchive
+grub
+edk2-shell
+
+# Patched GNOME 48 / XLibre desktop build (meson-based)
+meson
+ninja
+pkgconf
+glib2
+glib2-devel
+gobject-introspection
+wayland
+wayland-protocols
+libinput
+libdrm
+libei
+libwacom
+libcanberra
+libdisplay-info
+libxkbcommon
+libice
+libsm
+libxtst
+libxinerama
+libxkbfile
+libxcomposite
+libxdamage
+libxcursor
+libxfixes
+libxi
+libxrandr
+libx11
+libxau
+libxcb
+libxcvt
+xtrans
+xorg-server-devel
+graphene
+colord
+lcms2
+pipewire
+startup-notification
+sassc
+itstool
+
+# GNOME stack headers pulled in by the patched packages
+gnome-settings-daemon
+gsettings-desktop-schemas
+gtk4
+gtk3
+gnome-desktop
+gnome-desktop-4
+gjs
+gnome-autoar
+libibus
+libgweather-4
+evolution-data-server
+accountsservice
+json-glib
+keyutils
+pam
+upower
+libgdm
+libsecret
+libsoup3
+libadwaita
+gcr-4
+
+# Freeman (Rust)
+rust
+cargo
+
+# Misc
+git
+unzip
+python-argcomplete
+bash-completion
+
+# Pre-release QA (boot-test matrix in the build/QA container)
+qemu-system-x86
+qemu-system-aarch64

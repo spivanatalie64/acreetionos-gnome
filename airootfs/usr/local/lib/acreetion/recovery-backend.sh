@@ -369,8 +369,8 @@ case "${1:-}" in
     rebuild-initramfs)
         repair_initramfs
         ;;
-    rebuild-grub)
-        repair_grub
+    rebuild-grub|rebuild-bootloader)
+        repair_systemdboot
         ;;
     clear-locks)
         clear_package_locks

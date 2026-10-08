@@ -1,0 +1,307 @@
+#!/usr/bin/env bash
+# ==============================================================================
+#  horizon-c-partition - A/B-free rollback engine for AcreetionOS Horizon
+# ==============================================================================
+#  Freeman-driven alternative to the Android A/B partition scheme.
+#
+#  Horizon keeps ONE pristine, compressed root-image copy - the "C partition":
+#
+#    - The C partition is an ext* filesystem holding a zstd-compressed tar of
+#      the installed system, recorded by a sha256 manifest.
+#    - Files on it are marked immutable via chattr +i, so even root cannot
+#      modify or delete a sealed image; they must be unsealed first
+#      (unseal -> write -> seal is the only write path).
+#    - At boot (or on demand) the image is copied into a ramdisk (tmpfs),
+#      verified, and can be restored over the running root as a rollback.
+#
+#  Rootfs-neutral data under /home, /root and /var/lib/horizon-installer is
+#  never sealed or restored without an explicit decision above: user-data
+#  protection rules from AGENTS.md apply.
+# ==============================================================================
+set -euo pipefail
+
+C_LABEL="${HORIZON_C_LABEL:-HORIZON-C}"
+C_KEEP_GEN="${HORIZON_C_KEEP:-2}"
+RAMDISK_DEFAULT="/run/horizon-c"
+
+# Directories never extracted, never sealed, never rsynced.
+NEVER_DIRS=(
+    ./proc ./sys ./dev ./run ./tmp
+    ./var/tmp ./var/cache ./var/log/journal
+    ./home ./root
+    ./var/lib/horizon-installer
+    ./swapfile ./mnt ./media
+)
+
+action="${1:-}"
+[[ $# -gt 0 ]] && shift
+log() { printf '%s\n' "$*"; }
+die() { printf 'error: horizon-c-partition: %s\n' "$*" >&2; exit 1; }
+
+command -v zstd >/dev/null 2>&1 || die "zstd is required (ensure it in packages.x86_64)"
+command -v chattr >/dev/null 2>&1 || die "chattr (e2fsprogs) is required"
+command -v rsync >/dev/null 2>&1 || die "rsync is required"
+command -v mountpoint >/dev/null 2>&1 || die "mountpoint (util-linux) is required"
+[[ "$(id -u)" -eq 0 ]] || die "root privileges required"
+
+# ── C partition resolution ────────────────────────────────────────────────────
+c_auto() {
+    if [[ -n "${HORIZON_C_PART:-}" ]]; then
+        echo "$HORIZON_C_PART"
+        return 0
+    fi
+    if [[ -e "/dev/disk/by-label/$C_LABEL" ]]; then
+        echo "/dev/disk/by-label/$C_LABEL"
+        return 0
+    fi
+    return 1
+}
+
+resolve_device() {
+    local dev="${1:-}"
+    [[ -n "$dev" ]] || dev="$(c_auto)" || die "no C partition: pass a device, set HORIZON_C_PART, or label a partition $C_LABEL"
+    [[ -e "$dev" ]] || die "C partition device does not exist: $dev"
+    echo "$dev"
+}
+
+new_temp_mount_root() {
+    mktemp -d "/run/horizon-c.XXXXXXXX"
+}
+
+mount_c() {
+    local dev="$1" mnt="$2"
+    local opts="ro"
+    if [[ "$action" == seal || "$action" == unseal ]]; then
+        opts="rw"
+    fi
+    mountpoint -q "$mnt" && die "$mnt is already a mountpoint"
+    mount -t ext4 -o "$opts" "$dev" "$mnt" 2>/dev/null \
+        || mount -o "$opts" "$dev" "$mnt" \
+        || die "cannot mount $dev ($opts)"
+}
+
+immutability() {
+    # immutability <flag> <file>:  flag = +i | -i
+    local flag="$1" file="$2"
+    [[ -e "$file" ]] || die "no such file: $file"
+    chattr "$flag" -- "$file" || die "chattr $flag failed: $file (C partition must be ext*)"
+}
+
+manifest_image_name() {
+    # manifest path -> newest sealed image file name
+    awk '!/^#/ { print $2; exit }' "$1"
+}
+
+# ── seal: capture the running system, compress, manifest, chattr +i ──────────
+do_seal() {
+    local dev="$1"
+    shift
+    local confirmed=1
+    [[ "${1:-}" == "--yes" ]] && confirmed=0
+    if (( confirmed )); then
+        printf 'Will CAPTURE the running system into %s (generation kept: %s). Continue? [y/N] ' \
+            "$dev" "$C_KEEP_GEN"
+        local reply=""
+        read -r reply
+        if [[ "$reply" != y ]]; then
+            log "cancelled"
+            return 1
+        fi
+    fi
+    local mnt epoch img_name img_path manifest
+    epoch="$(date +%s)"
+    mnt="$(mktemp -d "/run/horizon-c-seal.XXXXXXXX")"
+    mount_c "$dev" "$mnt"
+    trap 'umount "$mnt" 2>/dev/null || true; rm -rf -- "$mnt"' EXIT
+    img_name="root-${epoch}.tar.zst"
+    img_path="$mnt/$img_name"
+    log "==> Capturing system into $img_name via zstd ..."
+    local excludes=()
+    local dir
+    for dir in "${NEVER_DIRS[@]}"; do
+        excludes+=(--exclude="$dir")
+    done
+    excludes+=(--exclude=./.horizon-build)
+    tar --numeric-owner --format=posix --acls --xattrs --sort=name \
+        -C / "${excludes[@]}" -c . \
+        | zstd -f -q -T0 -19 --long -o "$img_path"
+    sync "$img_path"
+    [[ -s "$img_path" ]] || die "captured image is empty; refusing to seal"
+
+    local img_hash
+    img_hash="$(sha256sum "$img_path" | awk '{print $1}')"
+    manifest="$mnt/HORIZON-C-MANIFEST.sha256"
+    {
+        echo "# AcreetionOS Horizon C-partition sealed rootfs"
+        echo "# epoch=${epoch} kernel=$(uname -r) generator=horizon-c-partition v1"
+        printf '%s  %s\n' "$img_hash" "$img_name"
+    } > "$manifest"
+    immutability +i "$img_path"
+    immutability +i "$manifest"
+
+    # Enforce the generation budget (ring of C_KEEP generations, newest kept):
+    # anything older than C_KEEP-1 alongside the fresh one is unsealed and
+    # deleted. tail -n +C_KEEP trims exactly the over-budget set.
+    local over_budget=()
+    mapfile -t over_budget < <(find "$mnt" -maxdepth 1 -name 'root-*.tar.zst' \
+        ! -name "$img_name" -printf '%p\n' | sort -r | tail -n +$(( C_KEEP_GEN )))
+    local old
+    for old in "${over_budget[@]}"; do
+        immutability -i "$old"
+        rm -f -- "$old"
+    done
+    log "==> Sealed $img_name (sha256: $img_hash) on $dev"
+}
+
+do_unseal() {
+    local dev="$1"
+    local mnt newest
+    mnt="$(mktemp -d "/run/horizon-c-unseal.XXXXXXXX")"
+    mount_c "$dev" "$mnt"
+    trap 'umount "$mnt" 2>/dev/null || true; rm -rf -- "$mnt"' EXIT
+    newest="$(find "$mnt" -maxdepth 1 -name 'root-*.tar.zst' -printf '%T@ %f\n' | sort -rn | head -n1 | cut -d' ' -f2-)"
+    [[ -n "$newest" ]] || die "no sealed image on $dev"
+    immutability -i "$mnt/$newest"
+    log "==> Unsealed $newest on $dev"
+}
+
+do_verify() {
+    local dev="$1"
+    local mnt manifest img_name
+    mnt="$(mktemp -d "/run/horizon-c-verify.XXXXXXXX")"
+    mount_c "$dev" "$mnt"
+    trap 'umount "$mnt" 2>/dev/null || true; rm -rf -- "$mnt"' EXIT
+    manifest="$mnt/HORIZON-C-MANIFEST.sha256"
+    [[ -f "$manifest" ]] || die "no manifest on $dev; the C partition was never sealed"
+    grep -v '^#' "$manifest" | grep -q . || die "manifest on $dev is empty"
+    # sha256sum -c on read-only mount should pass without touching it.
+    (cd "$mnt" && grep -v '^#' "$manifest" | sha256sum -c -)
+    img_name="$(manifest_image_name "$manifest")"
+    zstd --test -q -- "$mnt/$img_name"
+    log "==> C partition verified: $img_name (seal intact)"
+}
+
+do_deploy() {
+    local dev="$1"
+    shift || true
+    local ramdisk="${HORIZON_C_RAMDISK:-$RAMDISK_DEFAULT}"
+    while (( $# > 0 )); do
+        case "$1" in
+            --ramdisk)
+                [[ -n "${2:-}" ]] || die "--ramdisk requires a directory"
+                ramdisk="$2"; shift 2 ;;
+            *) die "unknown deploy option: $1" ;;
+        esac
+    done
+    do_verify "$dev"
+    mkdir -p -- "$ramdisk"
+    if [[ "$(stat -f -c %T -- "$ramdisk")" != tmpfs ]]; then
+        echo "warning: $ramdisk is not on tmpfs; deploy target is not a true ramdisk" >&2
+    fi
+    local mnt img_name
+    mnt="$(mktemp -d "/run/horizon-c-copy.XXXXXXXX")"
+    mount_c "$dev" "$mnt"
+    trap 'umount "$mnt" 2>/dev/null || true; rm -rf -- "$mnt"' EXIT
+    img_name="$(manifest_image_name "$mnt/HORIZON-C-MANIFEST.sha256")"
+    cp -f -- "$mnt/$img_name" "$ramdisk/"
+    cp -f -- "$mnt/HORIZON-C-MANIFEST.sha256" "$ramdisk/"
+    # Byte-for-byte verification of the ramdisk copy.
+    (cd "$ramdisk" && grep -v '^#' HORIZON-C-MANIFEST.sha256 | sha256sum -c -) >/dev/null \
+        || die "ramdisk copy integrity failure"
+    log "==> C image staged in ramdisk: $ramdisk/$img_name"
+}
+
+do_restore() {
+    local dev="$1"
+    shift
+    local confirmed=1
+    [[ "${1:-}" == "--yes" ]] && confirmed=0
+    if (( confirmed )); then
+        printf 'RESTORE overwrites the running rootfs except protected data:\n  %s\n' \
+            "${NEVER_DIRS[*]}"
+        printf 'Type "rollback" to confirm: '
+        local reply=""
+        read -r reply
+        if [[ "$reply" != "rollback" ]]; then
+            log "cancelled"
+            return 1
+        fi
+    fi
+    do_deploy "$dev"
+    local ramdisk="${HORIZON_C_RAMDISK:-$RAMDISK_DEFAULT}"
+    local img_name stage
+    img_name="$(manifest_image_name "$ramdisk/HORIZON-C-MANIFEST.sha256")"
+    stage="$ramdisk/rootfs"
+    rm -rf -- "$stage"
+    mkdir -p -- "$stage"
+    log "==> Extracting rootfs into ramdisk staging ($stage) ..."
+    tar --numeric-owner --xattrs --acls --zstd -xf "$ramdisk/$img_name" -C "$stage"
+    log "==> rsyncing C rootfs onto / ..."
+    local rsync_excludes=()
+    local dir
+    for dir in "${NEVER_DIRS[@]}"; do
+        rsync_excludes+=(--exclude="${dir#./}")
+    done
+    rsync -aHA --numeric-ids --delete \
+        "${rsync_excludes[@]}" \
+        "$stage/" /
+    log "==> Rollback complete. Reboot to sequence into the restored rootfs."
+}
+
+do_status() {
+    local dev
+    dev="$(resolve_device "${1:-}")"
+    echo "C partition: $dev"
+    echo "label: $C_LABEL"
+    echo "generation budget: $C_KEEP_GEN"
+    local mnt
+    mnt="$(new_temp_mount_root)"
+    mount_c "$dev" "$mnt"
+    trap 'umount "$mnt" 2>/dev/null || true; rm -rf -- "$mnt"' EXIT
+    local -a images=()
+    mapfile -t images < <(find "$mnt" -maxdepth 1 -name 'root-*.tar.zst' -printf '%f\n' | sort -r)
+    echo "images (${#images[@]}):"
+    local image
+    for image in "${images[@]}"; do
+        printf '  %s  (%s bytes)\n' "$image" "$(stat -c %s -- "$mnt/$image")"
+    done
+    if [[ -f "$mnt/HORIZON-C-MANIFEST.sha256" ]]; then
+        local manifest_image
+        manifest_image="$(manifest_image_name "$mnt/HORIZON-C-MANIFEST.sha256")"
+        echo "manifest points at: $manifest_image"
+        echo "manifest hash: $(awk '!/^#/ { print $1; exit }' "$mnt/HORIZON-C-MANIFEST.sha256")"
+    fi
+}
+
+usage() {
+    cat <<'EOF'
+Usage: horizon-c-partition <action> [device] [options]
+
+Actions:
+  seal [device] [--yes]    Capture the running system into the C partition:
+                           compressed zstd root image, sha256 manifest,
+                           chattr +i, generation ring (HORIZON_C_KEEP).
+  unseal [device]          Lift chattr +i on the newest sealed generation.
+  verify [device]          Manifest sha256 + zstd integrity check.
+  deploy [device] [--ramdisk DIR]
+                           Verify the C image and copy it into a ramdisk
+                           (default /run/horizon-c, which is tmpfs).
+  restore [device] [--yes] Boot rollback: extract the ramdisk copy and rsync
+                           the C rootfs onto the running root.
+  status [device]          Generations, manifest target and hashes.
+
+Device resolution: explicit argument, HORIZON_C_PART env var, or
+/dev/disk/by-label/HORIZON-C.
+EOF
+}
+
+case "$action" in
+    seal)     do_seal "$(resolve_device "${1:-}")";;
+    unseal)   do_unseal "$(resolve_device "${1:-}")" ;;
+    verify)   do_verify "$(resolve_device "${1:-}")" ;;
+    deploy)   do_deploy "$(resolve_device "${1:-}")" "${@:2}" ;;
+    restore)  do_restore "$(resolve_device "${1:-}")" "${@:2}" ;;
+    status)   do_status "${1:-}" ;;
+    ''|-h|--help) usage; exit 0 ;;
+    *) die "unknown action: $action"; usage; exit 1 ;;
+esac

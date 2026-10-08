@@ -25,10 +25,17 @@ vm.page-cluster = 0
 vm.vfs_cache_pressure = 100
 EOF
 
-    # 3. Ensure zswap kernel parameters are present in GRUB default config
-    if [ -f /etc/default/grub ]; then
-        if ! grep -q "zswap.enabled=1" /etc/default/grub; then
-            sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="zswap.enabled=1 zswap.compressor=zstd zswap.max_pool_percent=20 /' /etc/default/grub
+    # 3. Ensure zswap kernel parameters are present for systemd-boot.
+    #    (Installed hosts use systemd-boot; kernel-install derives the
+    #    loader entries from /etc/kernel/cmdline. bootloader.conf already
+    #    carries these via kernelParams — this is the belt-and-braces path
+    #    for cases where kernel-install runs later than the config pass.)
+    if [ ! -f /etc/kernel/cmdline ] || ! grep -q "zswap.enabled=1" /etc/kernel/cmdline; then
+        mkdir -p /etc/kernel
+        if [ -f /etc/kernel/cmdline ]; then
+            printf ' %s' "zswap.enabled=1 zswap.compressor=zstd zswap.max_pool_percent=20" >> /etc/kernel/cmdline
+        else
+            echo "zswap.enabled=1 zswap.compressor=zstd zswap.max_pool_percent=20" > /etc/kernel/cmdline
         fi
     fi
 

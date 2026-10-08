@@ -52,11 +52,17 @@ class CalamaresConfigTests(unittest.TestCase):
         self.assertEqual(data.get('geoip', {}).get('style'), 'json')
         self.assertEqual(data.get('geoip', {}).get('selector'), 'timezone')
 
-    def test_grub_zswap_params(self):
-        grub_path = CALAMARES_ETC / 'modules/grubcfg.conf'
-        content = grub_path.read_text()
+    def test_systemdb_boot_zswap_params(self):
+        # Installed hosts use systemd-boot; zswap params ride along in
+        # bootloader.conf kernelParams (flattened into /etc/kernel/cmdline).
+        boot_conf = CALAMARES_ETC / 'modules/bootloader.conf'
+        content = boot_conf.read_text()
         self.assertIn('zswap.enabled=1', content)
         self.assertIn('zswap.compressor=zstd', content)
+
+    def test_bootloader_is_systemdb_on_uefi(self):
+        boot_conf = CALAMARES_ETC / 'modules/bootloader.conf'
+        self.assertIn('efiBootLoader: "systemd-boot"', boot_conf.read_text())
 
     def test_settings_conf_includes_zram_and_restore(self):
         settings_path = CALAMARES_ETC / 'settings.conf'

@@ -71,7 +71,7 @@ while true; do
             2 "Display & Xorg Reset (Fix Blank Screen)" \
             3 "Switch GPU Driver (Nouveau / Modesetting / NVIDIA)" \
             4 "Rebuild Initramfs (Default & Fallback)" \
-            5 "Rebuild GRUB Bootloader & Reset Failure Counters" \
+            5 "Rebuild systemd-boot Loader & Boot Entries" \
             6 "Clear Package Manager Locks (pacman db.lck)" \
             7 "Filesystem Check & Schedule fsck" \
             8 "Reset User / Root Password" \
@@ -94,7 +94,7 @@ while true; do
         echo " 2) Display & Xorg Reset (Fix Blank Screen)"
         echo " 3) Switch GPU Driver (Nouveau / Modesetting / NVIDIA)"
         echo " 4) Rebuild Initramfs (Default & Fallback)"
-        echo " 5) Rebuild GRUB Bootloader & Reset Failure Counters"
+        echo " 5) Rebuild systemd-boot Loader & Boot Entries"
         echo " 6) Clear Package Manager Locks (pacman db.lck)"
         echo " 7) Filesystem Check & Schedule fsck"
         echo " 8) Reset User / Root Password"
@@ -159,7 +159,7 @@ while true; do
             ;;
         5)
             OUTPUT=$("$BACKEND" rebuild-grub 2>&1)
-            show_message "GRUB Rebuild Result" "$OUTPUT"
+            show_message "systemd-boot Rebuild Result" "$OUTPUT"
             ;;
         6)
             OUTPUT=$("$BACKEND" clear-locks 2>&1)

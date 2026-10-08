@@ -29,7 +29,7 @@ inspect the relevant implementation before changing behavior.
 - `xlibre-patches/`: pinned desktop sources, patches, and package builder.
 - `tools/freeman/`: Rust workspace. Its CLI binary is named `pamac` during
   compilation and is copied as `freeman` by the build scripts.
-- `grub/`, `syslinux/`, `efiboot/`: bootloader configuration.
+- `syslinux/`, `efiboot/`: bootloader configuration (systemd-boot primary; GRUB only as legacy-BIOS fallback via Calamares).
 - `tests/`: Python unittest coverage for installer features and profiles.
 - `chatbot-ui/`, `installer/chatbot/`: separate React/webpack packages.
 - `.github/workflows/build-iso.yml`, `.gitlab-ci.yml`: ISO build pipelines;

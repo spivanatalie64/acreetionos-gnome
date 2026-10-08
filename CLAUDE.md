@@ -32,4 +32,4 @@ with the Freeman update utility for Android/SteamOS-style image updates.
   - `usr/local/bin/horizon-image-update`: Backend image update downloader/verifier/writer
 - **xlibre-patches/**: Pinned source configurations and patches for GNOME 48 / XLibre
 - **tools/freeman/**: Rust source for the Freeman CLI
-- **grub/**, **syslinux/**, **efiboot/**: Bootloader configurations
+- **syslinux/**, **efiboot/**: Bootloader configurations (systemd-boot primary; GRUB only as legacy-BIOS fallback via Calamares)

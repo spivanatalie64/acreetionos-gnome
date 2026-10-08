@@ -49,7 +49,7 @@ prepare:deps:
     - echo "==> Refreshing databases and upgrading keyring..."
     - pacman -Sy --noconfirm --config "${CI_PROJECT_DIR}/pacman.conf" archlinux-keyring
     - echo "==> Installing archiso build dependencies..."
-    - pacman -S --noconfirm --needed --config "${CI_PROJECT_DIR}/pacman.conf" archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive grub edk2-shell
+    - pacman -S --noconfirm --needed --config "${CI_PROJECT_DIR}/pacman.conf" archiso squashfs-tools dosfstools erofs-utils mtools xorriso libarchive edk2-shell
     - echo "==> Build environment ready."
     - mkarchiso --version
   rules:
@@ -95,6 +95,63 @@ build:iso:
       - out/SHA256SUMS
       - out/MD5SUMS
     expire_in: 30 days
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 4 – PRE-RELEASE QA (alpha gate)
+# Boot-tests the produced ISO across the CPU-generation matrix; requires a
+# runner that exposes /dev/kvm and has qemu-system-x86_64. Set
+# HORIZON_BOOT_TEST=1 (e.g. via the web pipeline) to include it in a run.
+# ─────────────────────────────────────────────────────────────────────────────
+qatest:boot-matrix:
+  stage: publish
+  tags:
+    - acreetionos
+  needs:
+    - build:iso
+  script:
+    - chmod +x tools/ci/boot-test.sh
+    - ./tools/ci/boot-test.sh --iso "$(ls -1t "${ISO_OUT_DIR}"/*.iso | head -n1)"
+  rules:
+    - if: '$HORIZON_BOOT_TEST == "1"'
+      when: on_success
+    - when: never
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STAGE 5 – ARM COUNTERPART (alpha tier)
+# Builds the aarch64 ISO on a self-hosted ARM64 runner tagged
+# "acreetionos-arm" (mkarchiso cannot pacstrap cross-arch, so the counterpart
+# is built natively). Patched XLibre packages are x86_64-only and are skipped.
+# ─────────────────────────────────────────────────────────────────────────────
+build:iso-arm:
+  stage: build
+  tags:
+    - acreetionos-arm
+  needs: []
+  timeout: 3h
+  script:
+    - echo "==> Starting AcreetionOS ISO build (aarch64 counterpart)..."
+    - cd "${CI_PROJECT_DIR}"
+    - HORIZON_SKIP_PATCHED_PACKAGES=1 ./build.sh -H -c ./pacman-aarch64.conf || true
+    # build.sh -H requires root on the runner user; run mkarchiso directly if
+    # the runner is unprivileged:
+    - |
+      if [ ! -e ../ISO/*.iso ] && [ ! -e out/*.iso ]; then
+        PATH="${CI_PROJECT_DIR}:${PATH}" mkarchiso -L AcreetionOS -v -w "${WORK_DIR}-arm" -o "${ISO_OUT_DIR}" -C "${CI_PROJECT_DIR}/pacman-aarch64.conf" "${CI_PROJECT_DIR}"
+      fi
+    - ls -lh "${ISO_OUT_DIR}"/*.iso
+  after_script:
+    - rm -rf "${WORK_DIR}-arm"
+  artifacts:
+    name: "AcreetionOS-${CI_COMMIT_SHORT_SHA}-arm64"
+    paths:
+      - out/*.iso
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "acreetionos"'
+      when: manual
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+    - when: never
 
 # ───────────────────────────────────────────────────────────────────
 # STAGE 3 – PUBLISH

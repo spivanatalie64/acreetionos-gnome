@@ -1,0 +1,77 @@
+name: AcreetionOS Horizon ISO Build (aarch64 / ARM counterpart)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feature/horizon-xlibre
+    paths:
+      - 'packages.aarch64'
+      - 'pacman-aarch64.conf'
+      - '.github/workflows/build-iso-arm.yml'
+
+jobs:
+  build-iso-arm:
+    name: Build aarch64 Horizon ISO (alpha)
+    # Native arm64 runner: cross-building an ISO pacstrap is not supported by
+    # mkarchiso, so the counterpart pipeline runs the build natively.
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: arm64v8/archlinux:base-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize keyrings (Arch keyring + Arch Linux ARM)
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+          # Add the ARM mirror, pull its keyring, then trust in-package keys.
+          printf '\n[core]\nServer = http://mirror.archlinuxarm.org/\$arch/core\n' >> /etc/pacman.conf
+          pacman -Sy --noconfirm --needed archlinux-keyring
+          # archlinuxarm-keyring comes from the (unsigned-trust) alarm repo path:
+          printf '\n[alarm]\nServer = http://mirror.archlinuxarm.org/\$arch/alarm\n' >> /etc/pacman.conf
+          pacman -Sy --noconfirm --allow-unsigned-package archlinuxarm-keyring || true
+
+      - name: Install build tools
+        run: |
+          mapfile -t packages < <(grep -v '^\s*#\|^\s*$' build-deps.txt)
+          pacman -S --noconfirm --needed "${packages[@]}"
+
+      - name: Build Freeman utility (native arm64)
+        run: |
+          chmod +x build-freeman.sh
+          ./build-freeman.sh
+
+      - name: Construct Horizon ARM ISO
+        run: |
+          chmod +x build.sh refresh.sh
+          # Alpha constraint: patched GNODE/XLibre packages are x86_64-only and
+          # are skipped on the ARM counterpart; stock upstream stack is used.
+          HORIZON_SKIP_PATCHED_PACKAGES=1 \
+          HORIZON_REBUILD_FREEMAN=0 \
+          HORIZON_BUILD_DIR="$PWD/.horizon-build" \
+          ./build.sh -H -c ./pacman-aarch64.conf
+          ls -lh out/ ../ISO/ 2>/dev/null || true
+
+      - name: Boot smoke test (qemu aarch64)
+        run: |
+          chmod +x tools/ci/boot-test.sh
+          ISO="$(ls -1t ../ISO/*.iso out/*.iso 2>/dev/null | head -n1)"
+          ./tools/ci/boot-test.sh --arch aarch64 --iso "$ISO" --timeout 900
+
+      - name: Compute SHA-256 Checksums
+        run: |
+          mkdir -p final-artifacts
+          cp -f ../ISO/*.iso out/*.iso final-artifacts/ 2>/dev/null || true
+          cd final-artifacts
+          sha256sum *.iso > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload ISO Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AcreetionOS-Horizon-ISO-arm64
+          path: final-artifacts/
+          retention-days: 14

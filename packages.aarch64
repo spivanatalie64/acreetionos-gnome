@@ -1,4 +1,11 @@
 ################################################################################
+# AcreetionOS Horizon - aarch64 (ARM) package list
+# DERIVED from packages.x86_64 minus x86-only entries. Alpha tier:
+# any package unavailable in Arch Linux ARM core/extra must be pruned after
+# the first CI run reports it; patched XLibre packages are NOT built for arm,
+# so this image uses the stock upstream stack (see pacman-aarch64.conf).
+################################################################################
+################################################################################
 # AcreetionOS Package List v2.0 just using this see if our gitlab is working
 # Optimized for minimal ISO size while maintaining full functionality
 ################################################################################
@@ -29,8 +36,7 @@ arch-install-scripts
 ################################################################################
 # BOOT & BOOTLOADER - Required for booting the ISO and installing bootloader
 ################################################################################
-# legacy BIOS installs: Calamares falls back to GRUB (UEFI uses systemd-boot)
-syslinux
+grub
 efibootmgr
 os-prober
 plymouth
@@ -176,8 +182,6 @@ cups
 usbutils
 libusb-compat
 ddcutil
-broadcom-wl-dkms
-r8125-dkms
 ppp
 nvme-cli
 smartmontools
@@ -199,7 +203,6 @@ libxrandr
 xfconf
 zlib
 nettle
-lib32-nettle
 libnsl
 
 ################################################################################
@@ -208,7 +211,6 @@ libnsl
 python
 python-six
 python-pam
-python312-main
 
 ################################################################################
 # APPLICATIONS
@@ -234,7 +236,6 @@ mtools
 ################################################################################
 # Hardware microcode
 #amd-ucode
-intel-ucode
 
 # Additional filesystems (uncomment if needed)
 #btrfs-progs
@@ -315,7 +316,6 @@ nodejs
 # Virtualization guest tools (uncomment if needed)
 open-vm-tools
 qemu-guest-agent
-virtualbox-guest-utils-nox
 
 # Advanced storage (uncomment if needed)
 #nilfs-utils

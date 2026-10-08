@@ -19,6 +19,14 @@ fn run(args: &[&str]) -> (String, i32) {
 }
 
 #[test]
+fn c_partition_without_action_prints_help_exit_zero() {
+    let (out, code) = run(&["c-partition"]);
+    assert!(out.contains("Horizon C-partition rollback"), "help text missing, got: {}", out);
+    assert!(out.contains("Usage: freeman c-partition"));
+    assert_eq!(code, 0);
+}
+
+#[test]
 fn version_matches_compat_format() {
     let (out, code) = run(&["--version"]);
     assert!(out.starts_with("pamac-cli 11.7.5-freeman  -  libpamac 11.7.5-freeman\n"));
@@ -28,13 +36,14 @@ fn version_matches_compat_format() {
 
 #[test]
 fn help_for_each_verb() {
-    let cases: [(&str, &str); 6] = [
+    let cases: [(&str, &str); 7] = [
         ("search", "Search for packages or files, multiple search terms can be specified"),
         ("info", "Display package details, multiple packages can be specified"),
         ("list", "List packages, groups, repositories or files"),
         ("install", "Install packages from repositories, path or url"),
         ("checkupdates", "Safely check for updates without modifiying the databases"),
         ("clean", "Clean packages cache or build files"),
+        ("c-partition", "Horizon C-partition rollback (A/B-free)"),
     ];
     for (verb, anchor) in cases {
         let (h1, c1) = run(&[verb, "--help"]);

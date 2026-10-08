@@ -1,0 +1,18 @@
+[Unit]
+Description=Stage AcreetionOS Horizon C-partition sealed image into a ramdisk
+# Rollback parachute: as soon as local block devices are up, copy the sealed
+# rootfs image from the immutable C partition into tmpfs. This costs boot
+# time only as far as the copy is small (zstd) and gives the rest of boot a
+# pristine recovery payload for any later freeman c-partition restore.
+Documentation=man:horizon-c-partition(8)
+ConditionPathExists=/dev/disk/by-label/HORIZON-C
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/horizon-c-partition deploy /dev/disk/by-label/HORIZON-C
+# Dive fail-safe: a missing C partition is a no-op condition, not a boot failure.
+SuccessExitStatus=0
+
+[Install]
+WantedBy=multi-user.target

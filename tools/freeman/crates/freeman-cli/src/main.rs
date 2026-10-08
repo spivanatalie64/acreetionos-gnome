@@ -76,6 +76,7 @@ fn run(argv: &[String]) -> i32 {
                 "checkupdates" => out(&help::checkupdates()),
                 "upgrade" | "update" => out(&help::upgrade()),
                 "clean" => out(&help::clean()),
+                "c-partition" => out(&help::c_partition()),
                 _ => out(&help::general()),
             }
         } else {
@@ -108,6 +109,10 @@ fn run(argv: &[String]) -> i32 {
         "build" => cmd_build(&rest),
         "clone" => cmd_clone(&rest),
         "update" | "upgrade" => cmd_image_update(image_action(&rest), &rest),
+        "c-partition" => {
+            let wants_help = positional.iter().any(|arg| arg == "--help" || arg == "-h");
+            cmd_c_partition(&rest, wants_help)
+        }
         _ => {
             out(&help::general());
             0
@@ -147,6 +152,33 @@ fn cmd_image_update(action: &str, rest: &[String]) -> i32 {
         Some(st) => st.code().unwrap_or(1),
         None => {
             eprintln!("freeman: image updater unavailable (/usr/local/bin/horizon-image-update not found)");
+            1
+        }
+    }
+}
+
+fn cmd_c_partition(rest: &[String], help_wanted: bool) -> i32 {
+    if help_wanted || rest.is_empty() || rest.iter().any(|arg| arg == "--help" || arg == "-h") {
+        out("Horizon C-partition rollback\n\nUsage: freeman c-partition <seal|verify|deploy|restore|status> [device]\n\nThe C partition (NOT an Android A/B split) holds a compressed, immutable (chattr +i) sealed copy of the installed rootfs. Every boot can stage that copy into a ramdisk (tmpfs); restaking the running rootfs from the sealed copy gives a guaranteed offline rollback target.\nActions: seal | unseal | verify | deploy | restore | status\n");
+        return 0;
+    }
+    let script_candidates = [
+        "/usr/local/bin/horizon-c-partition",
+        "airootfs/usr/local/bin/horizon-c-partition",
+        "./airootfs/usr/local/bin/horizon-c-partition",
+        "horizon-c-partition",
+    ];
+    let mut status = None;
+    for cand in script_candidates {
+        if let Ok(st) = Command::new(cand).args(rest).status() {
+            status = Some(st);
+            break;
+        }
+    }
+    match status {
+        Some(st) => st.code().unwrap_or(1),
+        None => {
+            eprintln!("freeman: rollback engine unavailable (/usr/local/bin/horizon-c-partition not found)");
             1
         }
     }

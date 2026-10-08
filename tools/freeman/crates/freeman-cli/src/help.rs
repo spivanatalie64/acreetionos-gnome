@@ -13,7 +13,7 @@ fn usage_line(out: &mut String, line: &str) {
 pub fn general() -> String {
     let mut o = String::new();
     o.push_str("Available actions:\n");
-    let actions: [(&str, &str, bool); 13] = [
+    let actions: [(&str, &str, bool); 14] = [
         ("--version", "", false),
         ("--help, -h", " [action]", false),
         ("search", " [options] <package(s)>", false),
@@ -26,9 +26,10 @@ pub fn general() -> String {
         ("update,upgrade", " [--check|--apply]", false),
         ("clone", " [options] <package(s)>", false),
         ("build", " [options] [package(s)]", false),
+        ("c-partition", " <seal|unseal|verify|deploy|restore|status> [device]", false),
         ("clean", " [options]", true),
     ];
-    for (action, suffix, _) in actions.iter().take(12) {
+    for (action, suffix, _) in actions.iter().take(13) {
         o.push_str(&format!("  freeman {:<14}{}\n", action, suffix));
     }
     o
@@ -346,6 +347,34 @@ pub fn upgrade() -> String {
             "also check development packages updates (use with --aur)".into(),
             "do not check development packages updates".into(),
             "build directory (use with --aur), if no directory is given the one specified in freeman.conf file is used".into(),
+        ],
+    );
+    o
+}
+
+pub fn c_partition() -> String {
+    let mut o = String::new();
+    block(&mut o, "Horizon C-partition rollback (A/B-free)");
+    usage_line(&mut o, "freeman c-partition <seal|unseal|verify|deploy|restore|status> [device]");
+    o.push_str("the C partition holds a compressed, chattr +i sealed system image;\n");
+    o.push_str("boot-time staging into a ramdisk gives a guaranteed rollback target\n\n");
+    options_block(
+        &mut o,
+        &[
+            "  seal [device] [--yes]".into(),
+            "  unseal [device]".into(),
+            "  verify [device]".into(),
+            "  deploy [device] [--ramdisk DIR]".into(),
+            "  restore [device] [--yes]".into(),
+            "  status [device]".into(),
+        ],
+        &[
+            "capture the running system into the C partition (zstd + sha256 manifest)".into(),
+            "lift the immutable flag from the newest sealed generation".into(),
+            "check manifest checksums and zstd integrity without mounting read/write".into(),
+            "verify the C image and copy it into a tmpfs ramdisk (/run/horizon-c)".into(),
+            "rollback: rsync the ramdisk copy of the sealed rootfs over the running root".into(),
+            "list stored generations, manifest target and hashes".into(),
         ],
     );
     o
