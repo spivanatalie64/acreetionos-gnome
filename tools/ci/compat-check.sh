@@ -73,17 +73,35 @@ comm_side() {  # $1 set A, $2 set B: packages in A but not B, prefixed
 }
 additions="$(comm_side "$(printf '%s\n' "${tgt_list[@]}")" "$(printf '%s\n' "${src_list[@]}")" '+')"
 removals="$(comm_side "$(printf '%s\n' "${src_list[@]}")" "$(printf '%s\n' "${tgt_list[@]}")" '-')"
-echo "conversion coverage: x86_64=$(printf '%s\n' "${src_list[@]}" | wc -l) target=$(printf '%s\n' "${tgt_list[@]}" | wc -l) additions=$(printf '%s' "$additions" | wc -w) removals=$(printf '%s' "$removals" | wc -w)"
+echo "conversion coverage: x86_64=$(printf '%s\n' "${src_list[@]}" | wc -l) target=$(printf '%s\n' "${tgt_list[@]}" | wc -l) additions=$(printf '%s\n' "$additions" | grep -c .) removals=$(printf '%s\n' "$removals" | grep -c .)"
 [[ -z "$additions" ]] || { echo "target-only additions:"; printf '%s\n' "$additions"; }
 [[ -z "$removals" ]] || { echo "x86_64-only removals:"; printf '%s\n' "$removals"; }
 
 # ── Repository availability using mkarchiso's own probe (pacman -T) ──────────
 tmpdb="$(mktemp -d "$report_dir/db.XXXXXXXX")"
 trap 'rm -rf -- "$tmpdb"' EXIT
+if [[ "$(id -u)" -ne 0 ]]; then
+    fail "pacman -Sy requires root: run compat-check from the build container/CI runner"
+fi
 if ! pacman -Sy --noconfirm --dbpath "$tmpdb" --config "$tgt_conf" >"$report_dir/sync.log" 2>&1; then
     tail -n 10 "$report_dir/sync.log" >&2
     fail "cannot sync $(arch_get arch) repositories (check network/mirror)"
 fi
+
+# ── One-shot repository index: single pacman -Sl call, zero per-pkg forks ────
+# Every package in every configured repo, enumerated once; O(1) associative
+# lookups afterward instead of one pacman fork per target (the old probe took
+# ~4 s per fork on a 200+-package list - this path costs one call).
+repo_index="$(pacman --dbpath "$tmpdb" --config "$tgt_conf" -Sl 2>"$report_dir/sl.err")" || {
+    tail -n 5 "$report_dir/sl.err" >&2
+    fail "cannot enumerate $(arch_get arch) repositories (pacman -Sl failed)"
+}
+declare -A repo_pkgs=()
+while read -r repo name _version; do
+    [[ -n "$name" ]] && repo_pkgs["$name"]="$repo"
+done <<< "$repo_index"
+repo_names="$(printf '%s\n' "$repo_index" | awk '{print $1}' | sort -u | tr '\n' ' ')"
+echo "repository index: ${#repo_pkgs[@]} packages across: $repo_names"
 
 declare -A alternatives=()
 if [[ -f "$alt_table" ]]; then
@@ -96,8 +114,8 @@ if [[ -f "$alt_table" ]]; then
     done < <(strip "$alt_table")
 fi
 
-probe() {  # probe <package> -> 0 if resolvable in target repos
-    pacman -T --dbpath "$tmpdb" --config "$tgt_conf" -- "$1" >/dev/null 2>&1
+probe() {  # probe <package> -> 0 if resolvable in target repos (set lookup)
+    [[ -n "${repo_pkgs[${1}]:-}" ]]
 }
 
 missing=()
@@ -156,6 +174,34 @@ if "$apply"; then
 else
     (( ${#substituted[@]} + ${#prunable[@]} == 0 )) || \
         echo "note: rerun with --apply to substitute alternatives/prune carryovers"
+fi
+
+# ── One final resolution sanity pass (a single pacman -T on the effective
+#    list) catches missing transitive dependencies before mkarchiso does. ──
+mapfile -t effective_list < <(strip "$tgt_file")
+resolution="ok"
+if ! pacman -T --dbpath "$tmpdb" --config "$tgt_conf" -- "${effective_list[@]}" >"$report_dir/t.log" 2>&1; then
+    resolution="pending"
+    tail -n 15 "$report_dir/t.log" >&2
+fi
+echo "resolution sanity: $resolution (single pacman -T over ${#effective_list[@]} packages)"
+
+# ── Bootloader stack consistency (systemd-boot primary, per AGENTS.md) ───────
+bootmodes="$(sed -n "s/^bootmodes=\((.*)\)/\1/p" "$root_dir/profiledef.sh" 2>/dev/null || true)"
+if [[ -z "$bootmodes" ]]; then
+    echo "warning: cannot parse profiledef.sh bootmodes; skipping bootloader checks"
+else
+    echo "profile bootmodes: $bootmodes"
+    if [[ "$(arch_get arch)" == "aarch64" ]]; then
+        [[ "$bootmodes" == *"bios"* ]] && \
+            echo "warning: bootmodes include x86 BIOS syslinux - inapplicable on aarch64; trim bootmodes on the arm runner (profiles are arch-agnostic)"
+        if [[ "$bootmodes" != *"systemd-boot"* ]]; then
+            fail "systemd-boot is the primary Horizon boot method but profiledef.sh lists none; refusing arm conversion"
+        fi
+        if grep -q "grub\b" "$tgt_file"; then
+            echo "warning: grub present in packages.aarch64 (legacy-BIOS fallback only); run compat-check --apply to prune it in favor of systemd-boot"
+        fi
+    fi
 fi
 
 # ── First-party binary architecture audit ────────────────────────────────────

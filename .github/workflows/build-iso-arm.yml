@@ -39,6 +39,14 @@ jobs:
           mapfile -t packages < <(grep -v '^\s*#\|^\s*$' build-deps.txt)
           pacman -S --noconfirm --needed "${packages[@]}"
 
+      - name: x86_64 -> arm64 conversion compatibility check
+        run: |
+          chmod +x build.sh tools/ci/compat-check.sh
+          # Strict conversion gate with the presetup alternatives list applied;
+          # aborts the workflow before the image build when a package has no
+          # arm64 substitution (see tools/ci/compat-alternatives.conf).
+          HORIZON_ARCH=aarch64 ./build.sh -H --arch=aarch64 --compat-check-only
+
       - name: Build Freeman utility (native arm64)
         run: |
           chmod +x build-freeman.sh
@@ -47,12 +55,14 @@ jobs:
       - name: Construct Horizon ARM ISO
         run: |
           chmod +x build.sh refresh.sh
-          # Alpha constraint: patched GNODE/XLibre packages are x86_64-only and
+          # Alpha constraint: patched GNOME/XLibre packages are x86_64-only and
           # are skipped on the ARM counterpart; stock upstream stack is used.
+          # The x86_64 -> arm64 conversion compat gate runs inside build.sh
+          # (Step 2.5, strict, with the presetup alternatives list).
           HORIZON_SKIP_PATCHED_PACKAGES=1 \
           HORIZON_REBUILD_FREEMAN=0 \
           HORIZON_BUILD_DIR="$PWD/.horizon-build" \
-          ./build.sh -H -c ./pacman-aarch64.conf
+          ./build.sh -H --arch aarch64
           ls -lh out/ ../ISO/ 2>/dev/null || true
 
       - name: Boot smoke test (qemu aarch64)
