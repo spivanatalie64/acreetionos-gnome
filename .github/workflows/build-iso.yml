@@ -51,6 +51,34 @@ jobs:
           HORIZON_SKIP_PATCHED_PACKAGES=1 HORIZON_REBUILD_FREEMAN=0 HORIZON_BUILD_DIR="$GITHUB_WORKSPACE/.horizon-build" ./build.sh
           ls -lh ../ISO/ || ls -lh out/
 
+      - name: Boot smoke test (qemu x86_64 emulator, TCG)
+        run: |
+          chmod +x tools/ci/boot-test.sh
+          # Testing policy (see issue #14): CI tests run under the x86_64
+          # emulator - qemu-system-x86_64 in TCG emulation. GitHub hosted
+          # runners never expose /dev/kvm, so the hypervisor is forced to
+          # tcg explicitly instead of relying on auto-detect: a hosted
+          # runner that ever grew /dev/kvm must not silently change what
+          # this step measures. The full 30-model matrix is reserved for
+          # the KVM-accelerated QA gate (qatest:boot-matrix on the
+          # self-hosted runner); CI smoke-tests the small
+          # tools/ci/cpu-models-ci.conf subset (~3 models) to keep the
+          # emulated wall-time sane.
+          ISO="$(ls -1t ../ISO/*.iso out/*.iso 2>/dev/null | head -n1)"
+          ./tools/ci/boot-test.sh --arch x86_64 --iso "$ISO" \
+              --hypervisors tcg --cpus tools/ci/cpu-models-ci.conf --timeout 900
+
+      - name: Upload boot test report (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AcreetionOS-Horizon-boot-test-x8664
+          path: |
+            ../ISO/boot-test/
+            out/boot-test/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Compute SHA-256 Checksums
         run: |
           mkdir -p final-artifacts
