@@ -1,5 +1,12 @@
 [Unit]
-Description=GNOME Display Manager
+# Horizon wrapper display-manager unit. GDM was replaced by LightDM (issue #8):
+# LightDM is repo-provided, X11-native, and needs none of GDM's GNOME-manager
+# dependencies. The wrapper still routes boot through
+# /usr/local/bin/horizon-display-manager so the horizon.diagnostic kernel
+# cmdline path keeps bypassing the greeter entirely.
+# NOTE: GDM's BusName=org.gnome.DisplayManager is gone on purpose - LightDM
+# publishes no such D-Bus name.
+Description=LightDM Display Manager
 
 # replaces the getty
 Conflicts=getty@tty1.service
@@ -12,8 +19,8 @@ After=plymouth-quit.service
 # Needs all the dependencies of the services it's replacing
 After=rc-local.service plymouth-start.service systemd-user-sessions.service
 
-# GDM takes responsibility for stopping plymouth, so if it fails
-# for any reason, make sure plymouth still stops
+# LightDM stops plymouth as it starts; if it fails for any reason,
+# make sure plymouth still stops
 OnFailure=plymouth-quit.service
 
 [Service]
@@ -21,7 +28,6 @@ ExecStart=/usr/local/bin/horizon-display-manager
 KillMode=mixed
 Restart=always
 IgnoreSIGPIPE=no
-BusName=org.gnome.DisplayManager
 EnvironmentFile=-/etc/locale.conf
 ExecReload=/bin/kill -SIGHUP $MAINPID
 KeyringMode=shared

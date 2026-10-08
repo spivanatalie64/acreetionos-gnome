@@ -47,7 +47,10 @@ export XDG_SESSION_DESKTOP=gnome
 export GDK_BACKEND=x11
 export GI_TYPELIB_PATH=/usr/lib/mutter-16:/usr/lib/gnome-shell
 
-echo "Xorg started on :0; launching GNOME Shell without GDM"
+# NOTE (GDM -> LightDM, issue #8): this launch path predates LightDM and
+# intentionally bypasses ANY display manager's greeter; text kept accurate
+# for the current stack below.
+echo "Xorg started on :0; launching GNOME Shell without LightDM"
 dbus-run-session -- gnome-shell >> "$log_dir/gnome-shell.log" 2>&1 &
 shell_pid=$!
 wait "$shell_pid"

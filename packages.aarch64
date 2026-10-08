@@ -116,7 +116,13 @@ directx-headers
 ################################################################################
 # DISPLAY MANAGER & GNOME 48 DESKTOP
 ################################################################################
-gdm
+# NOTE: gdm was deliberately replaced by lightdm + lightdm-gtk-greeter here.
+# GDM is unneeded baggage for an X11-only desktop and LightDM covers login +
+# live-session autologin with repo packages only. Live autologin config is in
+# airootfs/etc/lightdm/lightdm.conf.d/50-horizon-live.conf; system user lightdm
+# in airootfs/etc/{passwd,group,shadow,gshadow} at uid/gid 120. See issue #8.
+lightdm
+lightdm-gtk-greeter
 gnome-session
 gnome-desktop
 gnome-settings-daemon
