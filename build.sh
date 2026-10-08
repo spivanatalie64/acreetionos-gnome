@@ -94,8 +94,9 @@ with_multilib="${HORIZON_WITH_MULTILIB:-0}"
 skip_compat=0
 compat_check_only=0
 # Architecture conversion layer (tools/ci/arch-layer.sh): canonical source of
-# per-arch qemu/pacman/packages parameters. --arch or HORIZON_ARCH sets it.
-horizon_arch="${HORIZON_ARCH:-x86_64}"
+# per-arch qemu/pacman/packages parameters. --arch or HORIZON_ARCH sets it;
+# the default is the running host (x86_64 dev boxes, aarch64 ARM runners).
+horizon_arch="${HORIZON_ARCH:-$(uname -m)}"
 pac_conf_given=0
 
 fail() { printf 'error: build.sh: %s\n' "$*" >&2; exit 1; }
@@ -384,6 +385,21 @@ fi
 # Ensure executable bits on custom airootfs scripts
 chmod +x "$ROOT_DIR/airootfs/usr/local/bin/"* 2>/dev/null || true
 chmod +x "$ROOT_DIR/airootfs/usr/bin/"* 2>/dev/null || true
+
+# ------------------------------------------------------------------------------
+# x86_64 -> target arch conversion compatibility gate. Foreign-arch ISO
+# builds (principally aarch64) verify package-list coverage against the
+# target repositories first, applying the presetup alternatives list
+# (tools/ci/compat-alternatives.conf) when a package lacks an arm64 build.
+# ------------------------------------------------------------------------------
+if [[ "$compat_check_only" == 1 ]]; then
+    "$ROOT_DIR/tools/ci/compat-check.sh" "$HORIZON_ARCH" ${CI_COMPAT_APPLY:+--apply}
+    exit $?
+fi
+if [[ "$skip_iso" != 1 && "$HORIZON_ARCH" != "x86_64" && "$skip_compat" != 1 ]]; then
+    echo "==> Step 2.5/3: x86_64 -> $HORIZON_ARCH conversion compatibility check..."
+    "$ROOT_DIR/tools/ci/compat-check.sh" "$HORIZON_ARCH" --apply
+fi
 
 # ------------------------------------------------------------------------------
 # STEP 3: Clean previous ISO artifacts & run mkarchiso (our wrapper)
